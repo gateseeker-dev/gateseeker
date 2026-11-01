@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { bearerToken, createStaticAuth, createSupabaseAuth } from "../src/web/auth.js";
 import { authConfigFromEnv, handlerOptionsFromEnv, STUB_TOKEN, STUB_USER } from "../src/web/env.js";
-import { currentAdvisories, handleCleanupRequest, handleEventRequest, handleFeedPublishedRequest, handleFollowsRequest, handleUnsubscribeRequest, type MailSettings, handleMonitorRequest, handleReportRequest, handleScanRequest, handleScansRequest, type HandlerOptions, type ScanResponseOk } from "../src/web/handler.js";
+import { currentAdvisories, handleAccountRequest, handleCleanupRequest, handleEventRequest, handleFeedPublishedRequest, handleFollowsRequest, handleUnsubscribeRequest, type MailSettings, handleMonitorRequest, handleReportRequest, handleScanRequest, handleScansRequest, type HandlerOptions, type ScanResponseOk } from "../src/web/handler.js";
 import { advisorySetFromText } from "../src/intel/advisories.js";
 import { signFeed } from "../src/intel/feed-signature.js";
 import { createMemoryMailer, createStaticDirectory } from "../src/web/mail.js";
@@ -253,6 +253,27 @@ describe("createSupabaseStore", () => {
     expect(decodeURIComponent(calls[3]?.url ?? "")).toContain(`user_id=eq.${ALICE.id}&owner=eq.o&repo=eq.r`);
     const full = postgrest(() => new Response(JSON.stringify({ ok: false, reason: "limit" }))).store;
     expect(await full.follow(ALICE.id, "o", "x", 10)).toEqual({ ok: false, reason: "limit" });
+  });
+
+  it("deletes an account: its rows in every table first, then the sign-in record through the admin API", async () => {
+    const { store, calls } = postgrest(() => new Response(""));
+    await store.deleteAccount(ALICE.id);
+    expect(calls.map((c) => `${c.method} ${decodeURIComponent(c.url)}`)).toEqual([
+      `DELETE https://p.supabase.co/rest/v1/follows?user_id=eq.${ALICE.id}`,
+      `DELETE https://p.supabase.co/rest/v1/scans?user_id=eq.${ALICE.id}`,
+      `DELETE https://p.supabase.co/rest/v1/reports?user_id=eq.${ALICE.id}`,
+      `DELETE https://p.supabase.co/rest/v1/scan_quota?user_id=eq.${ALICE.id}`,
+      `DELETE https://p.supabase.co/rest/v1/waitlist?user_id=eq.${ALICE.id}`,
+      `DELETE https://p.supabase.co/auth/v1/admin/users/${ALICE.id}`,
+    ]);
+    // Not an account id: nothing is sent at all.
+    const other = postgrest(() => new Response(""));
+    await expect(other.store.deleteAccount("x&user_id=neq.0")).rejects.toThrow(/account id/);
+    expect(other.calls).toHaveLength(0);
+    // A failed step stops there: the sign-in record is never deleted with rows left behind.
+    const failing = postgrest((c) => (c.url.includes("/reports") ? new Response("", { status: 500 }) : new Response("")));
+    await expect(failing.store.deleteAccount(ALICE.id)).rejects.toThrow(/HTTP 500/);
+    expect(failing.calls.some((c) => c.url.includes("/auth/v1/admin/users/"))).toBe(false);
   });
 
   it("claims emails through claim_email, reads and deletes a follow by id, and reports whether a follow is new", async () => {
@@ -945,5 +966,47 @@ describe("unsubscribe", () => {
     expect(full).toMatchObject({ baseUrl: "https://gateseeker.example", dailyCap: 100 });
     expect(handlerOptionsFromEnv({ env: { ...supa, GATESEEKER_EMAIL_KEY: MAIL_KEY, BREVO_API_KEY: "xkeysib", GATESEEKER_EMAIL_FROM: "not an address", GATESEEKER_PUBLIC_URL: "http://evil.example", GATESEEKER_EMAIL_DAILY_CAP: "5000" } }).mail).toMatchObject({ mailer: null, baseUrl: "https://gateseeker.vercel.app", dailyCap: 250 });
     expect(handlerOptionsFromEnv({ env: { GATESEEKER_AUTH_STUB: "1" } }).mail).toMatchObject({ baseUrl: "http://localhost:4320" });
+  });
+});
+
+describe("account deletion", () => {
+  async function seeded() {
+    const store = createMemoryStore();
+    for (const u of [ALICE, BOB]) {
+      const reportId = await store.save({ userId: u.id, owner: "o", repo: "r", ref: null, sha: SHA, cachedFrom: null, body: { n: 1 }, expiresAt: "2099-01-01T00:00:00.000Z" });
+      await store.recordScan({ userId: u.id, owner: "o", repo: "r", sha: SHA, verdict: "pass", byPriority: { P1: 0, P2: 0, P3: 0, P4: 0 }, reportId });
+      await store.follow(u.id, "o", "r", 10);
+      await store.claimQuota(u.id, 10, 3600);
+    }
+    return store;
+  }
+
+  it("deletes only the signed-in account's data, and only with its login typed as confirmation", async () => {
+    const store = await seeded();
+    const options: HandlerOptions = { auth, store };
+    expect((await handleAccountRequest("DELETE", { confirm: "alice" }, options, null)).status).toBe(401);
+    expect((await handleAccountRequest("DELETE", { confirm: "bob" }, options, "Bearer tok-alice")).status).toBe(400);
+    expect((await handleAccountRequest("DELETE", {}, options, "Bearer tok-alice")).status).toBe(400);
+    expect((await handleAccountRequest("POST", { confirm: "alice" }, options, "Bearer tok-alice")).status).toBe(400);
+    expect(await store.listScans(ALICE.id, 10)).toHaveLength(1);
+
+    const out = await handleAccountRequest("DELETE", { confirm: " @Alice " }, options, "Bearer tok-alice");
+    expect(out).toEqual({ status: 200, body: { ok: true } });
+    expect(await store.listScans(ALICE.id, 10)).toEqual([]);
+    expect(await store.listFollows(ALICE.id)).toEqual([]);
+    expect(await store.findRecent("o", "r", SHA, 86_400_000)).toMatchObject({ userId: BOB.id });
+    // The quota starts over: the old window is gone with the account.
+    expect((await store.claimQuota(ALICE.id, 10, 3600)).used).toBe(1);
+    expect(await store.listScans(BOB.id, 10)).toHaveLength(1);
+    expect(await store.listFollows(BOB.id)).toHaveLength(1);
+    expect((await store.claimQuota(BOB.id, 10, 3600)).used).toBe(2);
+  });
+
+  it("is unavailable without sign-in or a store, and reports a store failure instead of claiming success", async () => {
+    expect((await handleAccountRequest("DELETE", { confirm: "alice" }, { store: createMemoryStore() }, "Bearer tok-alice")).status).toBe(404);
+    expect((await handleAccountRequest("DELETE", { confirm: "alice" }, { auth }, "Bearer tok-alice")).status).toBe(404);
+    const broken = createSupabaseStore({ url: "https://p.supabase.co", serviceKey: "s", fetch: () => Promise.reject(new Error("ECONNREFUSED")) });
+    const out = await handleAccountRequest("DELETE", { confirm: "alice" }, { auth, store: broken }, "Bearer tok-alice");
+    expect(out.status).toBe(503);
   });
 });

@@ -123,6 +123,8 @@ export interface ReportStore {
   latestFeed(): Promise<SignedFeed | null>;
   /** Adds one to today's counter for this kind. */
   countEvent(kind: EventKind): Promise<void>;
+  /** Deletes the account and everything kept for it: reports, history, follows, quota, then the sign-in itself. */
+  deleteAccount(userId: string): Promise<void>;
 }
 
 /** Queued follows first, earliest queued first; unqueued ones after (the "nulls last" of the Supabase query). */
@@ -289,6 +291,13 @@ export function createMemoryStore(clock: StoreClock = {}): ReportStore & { event
     async countEvent(kind) {
       const key = `${now().toISOString().slice(0, 10)}:${kind}`;
       events.set(key, (events.get(key) ?? 0) + 1);
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async deleteAccount(userId) {
+      for (const [id, r] of reports) if (r.userId === userId) reports.delete(id);
+      for (let i = scans.length - 1; i >= 0; i--) if (scans[i]?.userId === userId) scans.splice(i, 1);
+      for (let i = follows.length - 1; i >= 0; i--) if (follows[i]?.userId === userId) follows.splice(i, 1);
+      quota.delete(userId);
     },
     /** "YYYY-MM-DD:kind" -> count, for tests and the local server. */
     eventCounts() {
@@ -503,6 +512,14 @@ export function createSupabaseStore(options: SupabaseStoreOptions): ReportStore 
       if (!parsed.success) throw new StoreError("feed_sets query returned an unexpected shape", 200);
       const row = parsed.data[0];
       return row ? { publishedAt: row.published_at, digest: row.digest, payload: row.payload, signature: row.signature } : null;
+    },
+    async deleteAccount(userId) {
+      if (!ID.test(userId)) throw new StoreError("not an account id", null);
+      // Every table references auth.users with "on delete cascade", so deleting the user removes its rows. They are
+      // deleted first anyway, so a failure part-way leaves less behind, never more; the waitlist only unlinks on cascade.
+      const mine = new URLSearchParams({ user_id: `eq.${userId}` }).toString();
+      for (const table of ["follows", "scans", "reports", "scan_quota", "waitlist"]) await call(`/rest/v1/${table}?${mine}`, { method: "DELETE" });
+      await call(`/auth/v1/admin/users/${userId}`, { method: "DELETE" });
     },
   };
 }

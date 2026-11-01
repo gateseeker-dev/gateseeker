@@ -4,7 +4,7 @@ import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { authConfigFromEnv, exampleRepoFromEnv, handlerOptionsFromEnv } from "./env.js";
-import { handleCleanupRequest, handleEventRequest, handleFeedPublishedRequest, handleUnsubscribeRequest, handleFollowsRequest, handleMonitorRequest, handleReportRequest, handleScanRequest, handleScansRequest } from "./handler.js";
+import { handleAccountRequest, handleCleanupRequest, handleEventRequest, handleFeedPublishedRequest, handleUnsubscribeRequest, handleFollowsRequest, handleMonitorRequest, handleReportRequest, handleScanRequest, handleScansRequest } from "./handler.js";
 
 /**
  * Development and end-to-end server for the public page: serves web/dist and
@@ -15,6 +15,7 @@ import { handleCleanupRequest, handleEventRequest, handleFeedPublishedRequest, h
  *   POST /api/scan            analyze (bearer token when auth is configured)
  *   GET  /api/reports/<id>    a saved report of the signed-in user
  *   GET/POST/DELETE /api/follows  followed repositories of the signed-in user
+ *   DELETE /api/account       delete the signed-in account and its data ({confirm: login})
  *   GET  /api/cron/monitor    rescan due followed repositories (bearer CRON_SECRET)
  *   POST /api/feed/published  store a signed advisory set, queue and rescan (GATESEEKER_FEED_KEY)
  *   GET  /api/scans           the signed-in user's analysis history
@@ -132,6 +133,20 @@ const server = createServer((req, res) => {
         body = null;
       }
       const out = await handleFollowsRequest(req.method ?? "GET", body, options, authorization);
+      json(res, out.status, out.body);
+    })();
+    return;
+  }
+  if (url.pathname === "/api/account") {
+    void (async () => {
+      const raw = await readBody(req);
+      let body: unknown;
+      try {
+        body = raw === null ? null : (JSON.parse(raw) as unknown);
+      } catch {
+        body = null;
+      }
+      const out = await handleAccountRequest(req.method ?? "GET", body, options, authorization);
       json(res, out.status, out.body);
     })();
     return;

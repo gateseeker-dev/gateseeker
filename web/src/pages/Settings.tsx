@@ -1,18 +1,20 @@
-import { Avatar, Button, Card, Switch } from "@gateseeker/ui-kit";
-import { LogOut } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { Avatar, Button, Card, Input, Label, Switch } from "@gateseeker/ui-kit";
+import { Loader2, LogOut, Trash2 } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 
+import { deleteAccount } from "../api";
 import { useAuth } from "../auth-context";
 import { FollowedList } from "../components/FollowedList";
 import { PageSkeleton } from "../components/Skeletons";
 import { useNotifications } from "../notifications";
-import { navigate } from "../router";
+import { Link, navigate } from "../router";
 import { initialsOf } from "../Workspace";
 
 /**
- * /app/settings: the account, the notification preferences and what the
- * service keeps. Only what exists today: GitHub sign-in, notifications kept
- * in this browser, reports kept for 30 days and opened only by their account.
+ * /app/settings: the account, the notification preferences, what the service
+ * keeps, and deleting the account. Only what exists today: GitHub sign-in,
+ * notifications kept in this browser, reports kept for 30 days and opened only
+ * by their account, history for 180 days.
  */
 
 function Section({ title, description, children }: { title: string; description: string; children: ReactNode }) {
@@ -55,7 +57,7 @@ export function SettingsPage() {
         <p className="text-label text-muted-foreground">Your account, notifications and what Gateseeker keeps about your analyses.</p>
       </div>
 
-      <Section title="Account" description="You sign in with GitHub. Gateseeker reads your login and avatar, nothing else.">
+      <Section title="Account" description="You sign in with GitHub. Gateseeker uses your login and avatar on screen, and your email address only to send the alerts you turn on.">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <Avatar initials={initialsOf(login)} />
@@ -98,6 +100,59 @@ export function SettingsPage() {
           <Row label="Analyses" value="Limited per hour; the count shows after each analysis" />
         </dl>
       </Section>
+
+      <Section title="Delete account" description="Removes your account and everything Gateseeker keeps for it. This cannot be undone.">
+        <DeleteAccount token={auth.session.accessToken} userId={auth.session.user.id} login={login} onDeleted={() => { void auth.signOut().then(() => { navigate("/"); }); }} />
+      </Section>
+    </div>
+  );
+}
+
+/** Removes what this browser keeps for the account (history copy, notifications, preferences). */
+function clearBrowserCopies(userId: string): void {
+  try {
+    const keys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i) ?? "");
+    for (const k of keys) if (k.startsWith("gateseeker:") && k.endsWith(`:${userId}`)) localStorage.removeItem(k);
+  } catch {
+    /* storage unavailable: nothing kept to remove */
+  }
+}
+
+function DeleteAccount({ token, userId, login, onDeleted }: { token: string; userId: string; login: string; onDeleted: () => void }) {
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const expected = login || "delete";
+  const matches = typed.trim().replace(/^@/, "").toLowerCase() === expected.toLowerCase();
+
+  async function run() {
+    setBusy(true);
+    setError(null);
+    const out = await deleteAccount(token, typed);
+    if (out.ok) {
+      clearBrowserCopies(userId);
+      onDeleted();
+      return;
+    }
+    setBusy(false);
+    setError(out.error.message);
+  }
+
+  return (
+    <div className="grid gap-3">
+      <p className="text-body text-muted-foreground">
+        Deleted at once: saved reports, analysis history, followed repositories (no more emails) and your sign-in record. Aggregate counters without your identity stay. See the <Link href="/privacy" className="text-primary hover:underline">privacy notice</Link>.
+      </p>
+      <div className="grid gap-1.5">
+        <Label htmlFor="delete-confirm">Type {login ? <span className="font-mono">{login}</span> : <span className="font-mono">delete</span>} to confirm</Label>
+        <Input id="delete-confirm" autoComplete="off" spellCheck={false} value={typed} disabled={busy} onChange={(e) => { setTyped(e.target.value); }} />
+      </div>
+      {error && <p role="alert" className="text-label text-destructive">{error}</p>}
+      <div>
+        <Button variant="destructive" size="sm" disabled={!matches || busy} onClick={() => void run()}>
+          {busy ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Trash2 aria-hidden="true" />} Delete my account
+        </Button>
+      </div>
     </div>
   );
 }

@@ -14,6 +14,8 @@ Sign in with GitHub at [gateseeker.vercel.app](https://gateseeker.vercel.app), p
 - The repository is downloaded as an archive and read as text: nothing is cloned, installed or executed. Symbolic links are never created or followed; the report lists them as not read. Archives over 50 MB compressed are refused (use the CLI for those).
 - Reports are saved for 30 days and open only for the account that produced them. Secrets are redacted before anything is saved.
 - 10 analyses per account per hour; the same commit within 24 hours reuses the saved report without counting.
+- Follow up to 10 repositories to get an email when a daily check finds new P1 or P2 findings; every email has a one-click unsubscribe.
+- What the site keeps and for how long is in the [privacy notice](https://gateseeker.vercel.app/privacy); the [terms of use](https://gateseeker.vercel.app/terms) cover the hosted service. Settings has a button that deletes the account and everything kept for it.
 
 The workspace links each report to the GitHub Action below, with the repository already filled in.
 

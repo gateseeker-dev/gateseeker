@@ -31,7 +31,7 @@ export function About() {
               <CardHeader>
                 <CardTitle className="text-success">It is</CardTitle>
               </CardHeader>
-              <CardContent className="text-sm text-muted-foreground">A local, deterministic checker. It reads project files, consults public vulnerability sources, applies published rules, and returns prioritized findings with evidence, references and a verdict.</CardContent>
+              <CardContent className="text-sm text-muted-foreground">A deterministic checker, on your machine, in your CI or on this website. It reads project files, consults public vulnerability sources, applies published rules, and returns prioritized findings with evidence, references and a verdict.</CardContent>
             </Card>
             <Card>
               <CardHeader>
@@ -44,10 +44,23 @@ export function About() {
 
         <Section title="Open source, open data">
           <p>
-            The engine, the rules and the GitHub Action are MIT-licensed. The curated advisories are published under CC BY 4.0 and submitted upstream to OSV. Nobody in our audience installs a security tool they cannot read; so you can read all of it on{" "}
+            The engine, the rules and the GitHub Action are MIT-licensed. The curated advisories are published under CC BY 4.0, so OSV and anyone else can reuse them. Nobody in our audience installs a security tool they cannot read; so you can read all of it on{" "}
             <Link href="https://github.com/gateseeker-dev/gateseeker" className="text-primary hover:underline">GitHub</Link>.
           </p>
-          <p>Accounts, history and private repositories are on the roadmap; the gate itself will stay open.</p>
+          <p>The website adds accounts, history and alerts on top of the same engine; private repositories are on the roadmap. The gate itself will stay open.</p>
+        </Section>
+
+        <Section title="Privacy">
+          <p>The website keeps as little as it can, and you can delete all of it yourself:</p>
+          <ul className="grid list-disc gap-2 pl-5">
+            <li>Your GitHub login and avatar, shown on screen; your email address, used only for the alerts on repositories you follow, read at the moment an email is sent and never copied into our database.</li>
+            <li>Saved reports for 30 days and one line of history per analysis for 180 days, opened only by your account.</li>
+            <li>No advertising or tracking cookies and no analytics service; only aggregate daily counters without any user or IP address.</li>
+            <li>Every email has a one-click unsubscribe link, and Settings has a button that deletes your account and all of the above at once.</li>
+          </ul>
+          <p>
+            The full <Link href="/privacy" className="text-primary hover:underline">privacy notice</Link> lists every provider and your rights under the LGPD; the <Link href="/terms" className="text-primary hover:underline">terms of use</Link> say what the results do and do not mean.
+          </p>
         </Section>
       </div>
     </>

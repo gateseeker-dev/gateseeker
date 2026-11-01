@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { safeNext, takeNext } from "../auth";
 import { useAuth } from "../auth-context";
 import { countLoginStart, countLoginView, countSignInIfPending } from "../funnel";
-import { navigate } from "../router";
+import { Link, navigate } from "../router";
 
 /**
  * Sign-in page. "Continue with GitHub" starts Supabase Auth's OAuth flow
@@ -53,7 +53,10 @@ export function Login() {
           {unavailable ? (
             <p role="alert" className="text-center text-xs text-warning">Sign-in is not configured on this server. Run the CLI locally instead.</p>
           ) : (
-            <p className="text-center text-xs text-muted-foreground">The demo workspace is free and rate limited. Public repositories only; nothing is installed or executed. We read your GitHub login and avatar, nothing else.</p>
+            <p className="text-center text-xs text-muted-foreground">
+              The demo workspace is free and rate limited. Public repositories only; nothing is installed or executed. We use your GitHub login and avatar, and your email only for alerts you turn on. By continuing you accept the{" "}
+              <Link href="/terms" className="text-primary hover:underline">Terms of use</Link> and the <Link href="/privacy" className="text-primary hover:underline">Privacy notice</Link>.
+            </p>
           )}
         </CardContent>
       </Card>

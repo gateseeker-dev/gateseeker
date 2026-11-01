@@ -41,3 +41,8 @@ export function callFollows(method: "GET" | "POST" | "DELETE", token: string, ta
 export function fetchReport(id: string, token: string): Promise<ReportOutcome> {
   return call<ReportResponseOk>(`/api/reports/${encodeURIComponent(id)}`, { method: "GET" }, token);
 }
+
+/** Deletes the signed-in account and everything the service keeps for it; `confirm` is the GitHub login as typed. */
+export function deleteAccount(token: string, confirm: string): Promise<{ ok: true } | ScanResponseError> {
+  return call<{ ok: true }>("/api/account", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirm }) }, token);
+}

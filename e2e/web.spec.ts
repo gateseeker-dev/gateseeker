@@ -10,7 +10,7 @@ import { expect, test, type Page } from "@playwright/test";
  * round trip, a valid URL producing a report with the fixture's findings and
  * a saved /r/<id> link, the per-commit reuse, an invalid URL, a
  * missing/private repository, a repository over the size limit, the "use in
- * CI" section and sign-out.
+ * CI" section, sign-out, the privacy and terms pages and account deletion.
  */
 
 async function signIn(page: Page): Promise<void> {
@@ -372,5 +372,40 @@ test.describe("public page", () => {
     const ci = page.locator("#ci");
     await expect(ci).toContainText("Add this workflow to acme/vibe");
     await expect(ci).toContainText("uses: gateseeker-dev/gateseeker@v1");
+  });
+
+  test("links the privacy notice and the terms from the footer and the sign-in page", async ({ page }) => {
+    await page.goto("/");
+    const footer = page.getByRole("contentinfo");
+    await footer.getByRole("link", { name: "Privacy" }).click();
+    await expect(page).toHaveURL(/\/privacy$/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Privacy");
+    await expect(page.getByRole("main")).toContainText("Deleted after 30 days");
+    await expect(page.getByRole("main")).toContainText("Deleted after 180 days");
+    await footer.getByRole("link", { name: "Terms of use" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Terms of use");
+    await expect(page.getByRole("main")).toContainText("governed by the laws of Brazil");
+    await page.goto("/login");
+    await page.getByRole("main").getByRole("link", { name: "Privacy notice" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Privacy");
+  });
+
+  // Last on purpose: it deletes the stub account's history, follows and quota, which the tests above use.
+  test("deletes the account from Settings only after the login is typed, and signs out", async ({ page }) => {
+    await signIn(page);
+    await page.goto("/app/settings");
+    const remove = page.getByRole("button", { name: "Delete my account" });
+    await expect(remove).toBeDisabled();
+    await page.getByLabel("Type e2e-user to confirm").fill("someone-else");
+    await expect(remove).toBeDisabled();
+    await page.getByLabel("Type e2e-user to confirm").fill("e2e-user");
+    await remove.click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole("banner").getByRole("link", { name: "Log in" })).toBeVisible();
+    expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("gateseeker:") && k.endsWith(":00000000-0000-4000-8000-00000000e2e0")))).toEqual([]);
+    const scans = (await (await page.request.get("/api/scans", { headers: { authorization: "Bearer e2e-token" } })).json()) as { scans: unknown[] };
+    expect(scans.scans).toEqual([]);
+    const follows = (await (await page.request.get("/api/follows", { headers: { authorization: "Bearer e2e-token" } })).json()) as { follows: unknown[] };
+    expect(follows.follows).toEqual([]);
   });
 });

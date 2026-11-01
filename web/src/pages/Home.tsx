@@ -43,7 +43,7 @@ export function Home() {
         <div className="grid gap-4 sm:grid-cols-3">
           <Pillar icon={<ListOrdered aria-hidden="true" />} title="Prioritized, explained" text="Of forty alerts, which three matter in this project, why, and what to do in one sentence. Deterministic, auditable rules; no model decides." />
           <Pillar icon={<ScanSearch aria-hidden="true" />} title="Built for AI-generated code" text="Hardcoded keys in client bundles, Supabase without RLS, open CORS with credentials, committed .env files: the mistakes Lovable, Bolt, Cursor and v0 projects actually ship." />
-          <Pillar icon={<Siren aria-hidden="true" />} title="A gate, not a report" text="The same engine runs in your CI on every pull request and blocks what should not merge, with the fix spelled out in the PR." />
+          <Pillar icon={<Siren aria-hidden="true" />} title="A gate, not a report" text="The same engine runs in your CI on every pull request and fails the check when a P1 or P2 finding appears; an optional comment spells out the fix in the PR." />
         </div>
       </section>
 
@@ -51,7 +51,7 @@ export function Home() {
         <div className="relative flex flex-col items-start gap-5 p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8">
           <div>
             <h2 className="text-xl font-semibold tracking-tight">Make it a gate on every pull request</h2>
-            <p className="mt-1 max-w-xl text-sm text-muted-foreground">One workflow file, no account, no token. The check fails when a P1 or P2 finding appears, with the fix spelled out in the PR.</p>
+            <p className="mt-1 max-w-xl text-sm text-muted-foreground">One workflow file, no account, no token. The check fails when a P1 or P2 finding appears, and an optional comment spells out the fix in the PR.</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <Link href="/get-started" className={buttonVariants({ size: "default" })}>

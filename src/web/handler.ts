@@ -455,6 +455,30 @@ export async function handleFollowsRequest(method: string, body: unknown, option
   }
 }
 
+const deleteAccountSchema = z.object({ confirm: z.string().max(100) });
+
+/**
+ * DELETE /api/account: deletes the signed-in account and everything kept for
+ * it (docs/SPRINT_6.md 2.4). The body repeats the GitHub login as typed by
+ * the person, so a stray request with a valid session cannot do it by accident.
+ */
+export async function handleAccountRequest(method: string, body: unknown, options: HandlerOptions, authorization?: string | null): Promise<HttpResponse> {
+  const store = options.store;
+  if (!store || !options.auth) return fail("not-found", "Accounts are not available on this server.");
+  const who = await authenticate(options, authorization);
+  if (isResponse(who)) return who;
+  if (method !== "DELETE") return fail("bad-request", "Use DELETE.");
+  const parsed = deleteAccountSchema.safeParse(body);
+  const expected = (who.login ?? "delete").toLowerCase();
+  if (!parsed.success || parsed.data.confirm.trim().replace(/^@/, "").toLowerCase() !== expected) return fail("bad-request", "Type your GitHub login to confirm.");
+  try {
+    await store.deleteAccount(who.id);
+    return { status: 200, body: { ok: true } };
+  } catch (e) {
+    return storeFailure(e);
+  }
+}
+
 export interface MonitorResponse {
   ok: true;
   /** Followed repositories rescanned in this call. */

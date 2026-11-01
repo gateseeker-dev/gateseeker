@@ -12,6 +12,7 @@ import { DesignSystem } from "./pages/DesignSystem";
 import { GetStarted } from "./pages/GetStarted";
 import { Home } from "./pages/Home";
 import { HowItWorks } from "./pages/HowItWorks";
+import { Privacy, Terms } from "./pages/Legal";
 import { Login } from "./pages/Login";
 import { Resources, WorkspaceResources } from "./pages/Resources";
 import { SavedReport } from "./pages/SavedReport";
@@ -24,7 +25,7 @@ import { Workspace, type WorkspacePage } from "./Workspace";
 /**
  * Site shell: sticky header with the sections the PO asked for (Home, How it
  * works, About, Resources), "Log in" and the "Get started" call to action, the
- * routed page, and a three-column footer. The demo workspace (/app) is
+ * routed page, and a footer with product, project and legal links. The demo workspace (/app) is
  * provisional and unguarded until accounts exist.
  */
 
@@ -43,6 +44,8 @@ const TITLES: Record<string, string> = {
   "/get-started": "Get started · Gateseeker",
   "/login": "Log in · Gateseeker",
   "/unsubscribe": "Stop following · Gateseeker",
+  "/privacy": "Privacy · Gateseeker",
+  "/terms": "Terms of use · Gateseeker",
   "/app": "Analyze a repository · Gateseeker",
   "/app/design-system": "Design system · Gateseeker",
   "/app/settings": "Settings · Gateseeker",
@@ -101,6 +104,8 @@ function Shell() {
   else if (path === "/get-started") page = <GetStarted />;
   else if (path === "/login") page = <Login />;
   else if (path === "/unsubscribe") page = <Unsubscribe />;
+  else if (path === "/privacy") page = <Privacy />;
+  else if (path === "/terms") page = <Terms />;
   else if (path === "/app") page = <AnalyzePage />;
   else if (path === "/app/design-system") page = <DesignSystem />;
   else if (path === "/app/settings") page = <SettingsPage />;
@@ -200,13 +205,14 @@ function Shell() {
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10 sm:px-6 sm:py-14">{page}</main>
 
       <footer className="border-t bg-card/40">
-        <div className="mx-auto grid max-w-5xl gap-8 px-4 py-10 text-sm sm:grid-cols-[1.6fr_1fr_1fr] sm:px-6">
+        <div className="mx-auto grid max-w-5xl gap-8 px-4 py-10 text-sm sm:grid-cols-[1.6fr_1fr_1fr_1fr] sm:px-6">
           <div className="grid content-start gap-3">
             <Brand />
             <p className="max-w-sm text-muted-foreground">Security gate for AI-generated code. Reads your repository, never runs it, and tells you which findings matter and why.</p>
           </div>
           <FooterColumn title="Product" links={[{ href: "/how-it-works", label: "How it works" }, { href: "/get-started", label: "Get started" }, { href: "/resources", label: "Rules and limits" }, { href: "/login", label: "Log in" }]} />
           <FooterColumn title="Project" links={[{ href: "/about", label: "About" }, { href: "https://github.com/gateseeker-dev/gateseeker", label: "GitHub" }, { href: "https://www.npmjs.com/package/gateseeker", label: "npm" }, { href: "https://github.com/gateseeker-dev/gateseeker/blob/main/SECURITY.md", label: "Security policy" }]} />
+          <FooterColumn title="Legal" links={[{ href: "/privacy", label: "Privacy" }, { href: "/terms", label: "Terms of use" }]} />
         </div>
         <div className="border-t">
           <p className="mx-auto max-w-5xl px-4 py-4 text-xs text-muted-foreground sm:px-6">
