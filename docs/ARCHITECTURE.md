@@ -102,7 +102,7 @@ The workflow is the only one with write permissions and uses the repository's ow
 browser (/app, signed in with GitHub via Supabase Auth)
    │  POST /api/scan { url }  + bearer token
    ▼
-web/api/scan.ts ──▶ src/web/handler.ts
+web/api/[...path].ts ──▶ src/web/handler.ts   (one catch-all function: Hobby allows 12 per deployment)
                       1. auth     src/web/auth.ts      (401 without a valid session)
                       2. quota    src/web/store.ts     (claim_scan, 429 when exhausted, before any download)
                       3. cache    same commit within 24 h ──▶ reuse the saved report
