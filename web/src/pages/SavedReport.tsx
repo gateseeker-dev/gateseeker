@@ -9,6 +9,7 @@ import { useAuth } from "../auth-context";
 import { CiSnippet } from "../components/CiSnippet";
 import { ComparisonBand, useComparison } from "../components/Comparison";
 import { FollowButton } from "../components/FollowButton";
+import { ShareButton } from "../components/ShareButton";
 import { ReportSkeleton } from "../components/Skeletons";
 import { Link } from "../router";
 import { ReportView } from "../views/Report";
@@ -92,7 +93,12 @@ export function SavedReport({ id }: { id: string }) {
           <p className="text-label text-muted-foreground">
             Commit <span className="font-mono">{outcome.saved.repository.sha.slice(0, 7)}</span> · in your Scans until {new Date(outcome.expiresAt).toLocaleDateString()}.
           </p>
-          {auth.session && <FollowButton owner={outcome.saved.repository.owner} repo={outcome.saved.repository.repo} token={auth.session.accessToken} />}
+          {auth.session && (
+            <div className="flex flex-wrap items-center gap-2">
+              <ShareButton id={outcome.id} initial={outcome.isPublic} token={auth.session.accessToken} />
+              <FollowButton owner={outcome.saved.repository.owner} repo={outcome.saved.repository.repo} token={auth.session.accessToken} />
+            </div>
+          )}
         </div>
         {note && (
           <p className="mt-1 text-label text-muted-foreground" data-testid="saved-note">

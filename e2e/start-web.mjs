@@ -101,6 +101,7 @@ stub.listen(4322, "127.0.0.1", () => {
       GATESEEKER_AUTH_STUB: "1",
       GATESEEKER_EXAMPLE_REPO: "https://github.com/acme/vibe",
       GATESEEKER_SCAN_LIMIT: "3",
+      GATESEEKER_ADMIN_LOGINS: "e2e-user",
     },
   });
   const stop = () => {

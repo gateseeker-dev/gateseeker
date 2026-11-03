@@ -408,4 +408,81 @@ test.describe("public page", () => {
     const follows = (await (await page.request.get("/api/follows", { headers: { authorization: "Bearer e2e-token" } })).json()) as { follows: unknown[] };
     expect(follows.follows).toEqual([]);
   });
+
+  test("shows the live example on the Home without signing in, reused for the same commit", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByRole("figure", { name: "Example report" })).toBeVisible();
+    await page.getByRole("button", { name: "See a live example" }).click();
+    const report = page.getByRole("region", { name: "Report" });
+    await expect(report).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("Live example")).toBeVisible();
+    await expect(report).toContainText("GSK-SECRET-001");
+    await expect(report).not.toContainText("sk_live_HoHDwEcLksdRWvioeGponKHY");
+    // Signed out: no session was created and the analysis counted for no account.
+    await expect(page.getByRole("link", { name: "Log in" }).first()).toBeVisible();
+    const again = (await (await page.request.get("/api/example")).json()) as { ok: boolean; cached: boolean; id: unknown };
+    expect(again).toMatchObject({ ok: true, cached: true, id: null });
+  });
+
+  test("shares a saved report by link that opens without a session, and stops sharing", async ({ page, browser }) => {
+    await signIn(page);
+    await analyze(page, "https://github.com/acme/vibe");
+    await expect(page).toHaveURL(/\/r\/mem-/, { timeout: 30_000 });
+    const id = page.url().split("/r/")[1] ?? "";
+    // Not shared yet: the public page says so.
+    const visitor = await browser.newContext();
+    const other = await visitor.newPage();
+    await other.goto(`/p/${id}`);
+    await expect(other.getByRole("alert")).toContainText("No shared report with this id");
+    // The owner shares it.
+    await page.getByRole("button", { name: "Share a link" }).click();
+    await expect(page.getByRole("button", { name: "Stop sharing" })).toBeVisible();
+    await expect(page.getByTestId("share")).toContainText(`/p/${id}`);
+    await other.goto(`/p/${id}`);
+    await expect(other.getByRole("heading", { level: 1 })).toHaveText("acme/vibe");
+    await expect(other.getByRole("region", { name: "Report" })).toBeVisible();
+    await expect(other.getByText("Shared report")).toBeVisible();
+    await expect(other.getByRole("link", { name: "Analyze a repository" })).toBeVisible();
+    // And takes it back.
+    await page.getByRole("button", { name: "Stop sharing" }).click();
+    await expect(page.getByRole("button", { name: "Share a link" })).toBeVisible();
+    await other.reload();
+    await expect(other.getByRole("alert")).toContainText("No shared report with this id");
+    await visitor.close();
+  });
+
+  test("shows the product counters in Settings to the configured admin only", async ({ page }) => {
+    await signIn(page);
+    await page.goto("/app/settings");
+    const counters = page.getByTestId("product-counters");
+    await expect(counters).toBeVisible();
+    await expect(counters).toContainText("Login page views");
+    await expect(counters).toContainText("Analyses");
+    // The service answers 404 to anyone else.
+    const res = await page.request.get("/api/funnel", { headers: { authorization: "Bearer not-admin" } });
+    expect(res.status()).toBe(401);
+  });
+
+  test("publishes one page per approved curated advisory", async ({ page }) => {
+    await page.goto("/advisories");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Curated advisories");
+    await page.getByRole("link", { name: /laravel-lang\/lang/ }).click();
+    await expect(page).toHaveURL(/\/advisories\/GSK-ADV-2026-0001$/);
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("laravel-lang/lang");
+    await expect(page.getByText("Affected packages")).toBeVisible();
+    await expect(page.getByRole("link", { name: /StepSecurity|Laravel-Lang Supply Chain/ }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: "Check my repository" })).toBeVisible();
+    await page.goto("/advisories/GSK-ADV-1999-0001");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Advisory not found");
+  });
+
+  test("offers the README badge and serves the sharing image", async ({ page }) => {
+    await page.goto("/get-started");
+    await expect(page.getByRole("img", { name: "checked with Gateseeker" })).toBeVisible();
+    await expect(page.getByText("[![checked with Gateseeker]")).toBeVisible();
+    expect((await page.request.get("/badge.svg")).status()).toBe(200);
+    expect((await page.request.get("/og.png")).status()).toBe(200);
+    const html = await (await page.request.get("/")).text();
+    expect(html).toContain('property="og:image"');
+  });
 });

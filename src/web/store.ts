@@ -31,9 +31,17 @@ export interface StoredReport {
   body: unknown;
   createdAt: string;
   expiresAt: string;
+  /** Opened by anyone with the link (/p/<id>) once the owner shared it. */
+  isPublic: boolean;
 }
 
-export type NewReport = Omit<StoredReport, "id" | "createdAt">;
+export interface EventCount {
+  day: string;
+  kind: EventKind;
+  count: number;
+}
+
+export type NewReport = Omit<StoredReport, "id" | "createdAt" | "isPublic">;
 
 /** History line: what the Dashboard and Scans show, without the report body (which expires sooner). */
 export interface ScanSummary {
@@ -84,7 +92,7 @@ export type FollowResult = { ok: true; created: boolean; follow: FollowRecord } 
 
 /** Aggregate page events (login funnel): counted per UTC day, no user, IP or user agent. */
 /** Kinds the page may send to POST /api/event. */
-export const CLIENT_EVENT_KINDS = ["login_view", "login_start", "signin_complete", "email_click"] as const;
+export const CLIENT_EVENT_KINDS = ["login_view", "login_start", "signin_complete", "email_click", "example_view", "public_report_view"] as const;
 /** All kinds, including the ones only the service counts (monitor and emails, docs/SPRINT_6.md 3.7). */
 export const EVENT_KINDS = [...CLIENT_EVENT_KINDS, "rescan_complete", "rescan_incomplete", "rescan_failed", "email_follow_confirm", "email_alert", "email_paused", "email_capped", "email_failed", "unsubscribe"] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
@@ -125,6 +133,16 @@ export interface ReportStore {
   countEvent(kind: EventKind): Promise<void>;
   /** Deletes the account and everything kept for it: reports, history, follows, quota, then the sign-in itself. */
   deleteAccount(userId: string): Promise<void>;
+  /** Shares or unshares a report; only its owner can. Returns the report, or null when it is not theirs. */
+  setPublic(id: string, userId: string, isPublic: boolean): Promise<StoredReport | null>;
+  /** A report by id, only when its owner shared it. */
+  getPublic(id: string): Promise<StoredReport | null>;
+  /** Daily counters since `sinceDay` (YYYY-MM-DD, inclusive), for the product counters panel. */
+  listEvents(sinceDay: string): Promise<EventCount[]>;
+  /** Analyses recorded since an instant, and distinct accounts among them (capped at 1000 rows). */
+  countScans(since: string): Promise<{ scans: number; accounts: number }>;
+  /** Follows not paused, across all accounts. */
+  countFollows(): Promise<number>;
 }
 
 /** Queued follows first, earliest queued first; unqueued ones after (the "nulls last" of the Supabase query). */
@@ -180,7 +198,7 @@ export function createMemoryStore(clock: StoreClock = {}): ReportStore & { event
     async save(report) {
       seq += 1;
       const id = `mem-${seq.toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-      reports.set(id, { ...report, id, createdAt: now().toISOString() });
+      reports.set(id, { ...report, id, createdAt: now().toISOString(), isPublic: false });
       return id;
     },
     // eslint-disable-next-line @typescript-eslint/require-await
@@ -299,6 +317,37 @@ export function createMemoryStore(clock: StoreClock = {}): ReportStore & { event
       for (let i = follows.length - 1; i >= 0; i--) if (follows[i]?.userId === userId) follows.splice(i, 1);
       quota.delete(userId);
     },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async setPublic(id, userId, isPublic) {
+      const r = reports.get(id);
+      if (r?.userId !== userId) return null;
+      const next = { ...r, isPublic };
+      reports.set(id, next);
+      return next;
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async getPublic(id) {
+      const r = reports.get(id);
+      return r?.isPublic ? r : null;
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async listEvents(sinceDay) {
+      const out: EventCount[] = [];
+      for (const [key, count] of events) {
+        const [day, kind] = key.split(":") as [string, EventKind];
+        if (day >= sinceDay) out.push({ day, kind, count });
+      }
+      return out.sort((a, b) => a.day.localeCompare(b.day) || a.kind.localeCompare(b.kind));
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async countScans(since) {
+      const rows = scans.filter((x) => x.createdAt >= since);
+      return { scans: rows.length, accounts: new Set(rows.map((x) => x.userId)).size };
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async countFollows() {
+      return follows.filter((f) => f.pausedReason === null).length;
+    },
     /** "YYYY-MM-DD:kind" -> count, for tests and the local server. */
     eventCounts() {
       return Object.fromEntries(events);
@@ -325,7 +374,11 @@ const rowSchema = z.looseObject({
   body: z.unknown(),
   created_at: z.string(),
   expires_at: z.string(),
+  // Absent before migration 20261104000000_public_reports.sql: then nothing is shared.
+  public: z.boolean().optional(),
 });
+
+const eventRowSchema = z.looseObject({ day: z.string(), kind: z.string(), count: z.number() });
 
 const scanRowSchema = z.looseObject({
   id: z.string(),
@@ -357,7 +410,7 @@ export class StoreError extends Error {
 }
 
 function toStored(row: z.infer<typeof rowSchema>): StoredReport {
-  return { id: row.id, userId: row.user_id, owner: row.owner, repo: row.repo, ref: row.ref, sha: row.sha, cachedFrom: row.cached_from, body: row.body, createdAt: row.created_at, expiresAt: row.expires_at };
+  return { id: row.id, userId: row.user_id, owner: row.owner, repo: row.repo, ref: row.ref, sha: row.sha, cachedFrom: row.cached_from, body: row.body, createdAt: row.created_at, expiresAt: row.expires_at, isPublic: row.public === true };
 }
 
 /** Supabase (PostgREST) implementation with the service_role key; the key never leaves the server. */
@@ -446,6 +499,44 @@ export function createSupabaseStore(options: SupabaseStoreOptions): ReportStore 
     },
     async countEvent(kind) {
       await call("/rest/v1/rpc/count_event", { method: "POST", body: JSON.stringify({ p_kind: kind }) });
+    },
+    async setPublic(id, userId, isPublic) {
+      if (!ID.test(id)) return null;
+      const q = new URLSearchParams({ id: `eq.${id}`, user_id: `eq.${userId}` });
+      const out = await call(`/rest/v1/reports?${q.toString()}`, { method: "PATCH", body: JSON.stringify({ public: isPublic }), prefer: "return=representation" });
+      const parsed = z.array(rowSchema).safeParse(out);
+      if (!parsed.success) throw new StoreError("reports update returned an unexpected shape", 200);
+      const row = parsed.data[0];
+      return row ? toStored(row) : null;
+    },
+    async getPublic(id) {
+      if (!ID.test(id)) return null;
+      const q = new URLSearchParams({ id: `eq.${id}`, public: "is.true", limit: "1" });
+      const out = await call(`/rest/v1/reports?${q.toString()}`, { method: "GET" });
+      const parsed = z.array(rowSchema).safeParse(out);
+      if (!parsed.success) throw new StoreError("reports query returned an unexpected shape", 200);
+      const row = parsed.data[0];
+      return row ? toStored(row) : null;
+    },
+    async listEvents(sinceDay) {
+      const q = new URLSearchParams({ day: `gte.${sinceDay}`, order: "day.asc,kind.asc", limit: "1000" });
+      const out = await call(`/rest/v1/events?${q.toString()}`, { method: "GET" });
+      const parsed = z.array(eventRowSchema).safeParse(out);
+      if (!parsed.success) throw new StoreError("events query returned an unexpected shape", 200);
+      return parsed.data.filter((r): r is typeof r & { kind: EventKind } => (EVENT_KINDS as readonly string[]).includes(r.kind)).map((r) => ({ day: r.day, kind: r.kind, count: r.count }));
+    },
+    async countScans(since) {
+      const q = new URLSearchParams({ created_at: `gte.${since}`, select: "user_id", limit: "1000" });
+      const out = await call(`/rest/v1/scans?${q.toString()}`, { method: "GET" });
+      const parsed = z.array(z.looseObject({ user_id: z.string() })).safeParse(out);
+      if (!parsed.success) throw new StoreError("scans query returned an unexpected shape", 200);
+      return { scans: parsed.data.length, accounts: new Set(parsed.data.map((r) => r.user_id)).size };
+    },
+    async countFollows() {
+      const q = new URLSearchParams({ paused_reason: "is.null", select: "id", limit: "1000" });
+      const out = await call(`/rest/v1/follows?${q.toString()}`, { method: "GET" });
+      const parsed = z.array(z.unknown()).safeParse(out);
+      return parsed.success ? parsed.data.length : 0;
     },
     async follow(userId, owner, repo, limit) {
       // Atomic in the database: the count and the insert happen in one function, so two tabs cannot pass the limit together.

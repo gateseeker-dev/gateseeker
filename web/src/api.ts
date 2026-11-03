@@ -1,6 +1,6 @@
-import type { FollowsResponse, ReportResponseOk, ScanResponseError, ScanResponseOk, ScansResponse } from "gateseeker/dist/web/handler.js";
+import type { FollowsResponse, FunnelResponse, ReportResponseOk, ScanResponseError, ScanResponseOk, ScansResponse, ShareResponse } from "gateseeker/dist/web/handler.js";
 
-export type { FollowView, FollowsResponse, PublicReport, ReportResponseOk, SavedScan, ScanHistoryEntry, ScanResponseError, ScanResponseOk, ScansResponse } from "gateseeker/dist/web/handler.js";
+export type { FollowView, FollowsResponse, FunnelResponse, PublicReport, ReportResponseOk, SavedScan, ScanHistoryEntry, ScanResponseError, ScanResponseOk, ScansResponse, ShareResponse } from "gateseeker/dist/web/handler.js";
 export type { Finding } from "gateseeker/dist/types.js";
 
 export type ScanOutcome = ScanResponseOk | ScanResponseError;
@@ -40,6 +40,26 @@ export function callFollows(method: "GET" | "POST" | "DELETE", token: string, ta
 /** A saved report of the signed-in account. */
 export function fetchReport(id: string, token: string): Promise<ReportOutcome> {
   return call<ReportResponseOk>(`/api/reports/${encodeURIComponent(id)}`, { method: "GET" }, token);
+}
+
+/** The example repository's report, for visitors who have not signed in. */
+export function fetchExample(signal?: AbortSignal): Promise<ScanOutcome> {
+  return call<ScanResponseOk>("/api/example", { method: "GET", ...(signal ? { signal } : {}) }, null);
+}
+
+/** A report its owner shared; no session. */
+export function fetchPublicReport(id: string): Promise<ReportOutcome> {
+  return call<ReportResponseOk>(`/api/public/${encodeURIComponent(id)}`, { method: "GET" }, null);
+}
+
+/** Shares (POST) or unshares (DELETE) one of the signed-in account's reports. */
+export function shareReport(id: string, token: string, share: boolean): Promise<ShareResponse | ScanResponseError> {
+  return call<ShareResponse>(`/api/reports/${encodeURIComponent(id)}/share`, { method: share ? "POST" : "DELETE" }, token);
+}
+
+/** Product counters; 404 for everyone but the configured admin logins. */
+export function fetchFunnel(token: string): Promise<FunnelResponse | ScanResponseError> {
+  return call<FunnelResponse>("/api/funnel", { method: "GET" }, token);
 }
 
 /** Deletes the signed-in account and everything the service keeps for it; `confirm` is the GitHub login as typed. */

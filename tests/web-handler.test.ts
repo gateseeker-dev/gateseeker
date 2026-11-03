@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { bearerToken, createStaticAuth, createSupabaseAuth } from "../src/web/auth.js";
 import { authConfigFromEnv, handlerOptionsFromEnv, STUB_TOKEN, STUB_USER } from "../src/web/env.js";
-import { currentAdvisories, handleAccountRequest, handleCleanupRequest, handleEventRequest, handleFeedPublishedRequest, handleFollowsRequest, handleUnsubscribeRequest, type MailSettings, handleMonitorRequest, handleReportRequest, handleScanRequest, handleScansRequest, type HandlerOptions, type ScanResponseOk } from "../src/web/handler.js";
+import { currentAdvisories, handleAccountRequest, handleExampleRequest, handleFunnelRequest, handlePublicReportRequest, handleShareRequest, resetExampleCache, handleCleanupRequest, handleEventRequest, handleFeedPublishedRequest, handleFollowsRequest, handleUnsubscribeRequest, type MailSettings, handleMonitorRequest, handleReportRequest, handleScanRequest, handleScansRequest, type HandlerOptions, type ScanResponseOk } from "../src/web/handler.js";
 import { advisorySetFromText } from "../src/intel/advisories.js";
 import { signFeed } from "../src/intel/feed-signature.js";
 import { createMemoryMailer, createStaticDirectory } from "../src/web/mail.js";
@@ -1008,5 +1008,111 @@ describe("account deletion", () => {
     const broken = createSupabaseStore({ url: "https://p.supabase.co", serviceKey: "s", fetch: () => Promise.reject(new Error("ECONNREFUSED")) });
     const out = await handleAccountRequest("DELETE", { confirm: "alice" }, { auth, store: broken }, "Bearer tok-alice");
     expect(out.status).toBe(503);
+  });
+});
+
+// --- growth round: shared reports, the public example, product counters -------
+
+describe("shared reports", () => {
+  it("only the owner shares; anyone with the link reads; unsharing closes it again", async () => {
+    const gh = fakeGitHub();
+    const store = createMemoryStore();
+    const opts = baseOptions(gh, { auth, store });
+    const first = await handleScanRequest({ url: "https://github.com/o/r" }, opts, "Bearer tok-alice");
+    const id = (first.body as ScanResponseOk).id ?? "";
+    expect(id).not.toBe("");
+    expect(await handlePublicReportRequest(id, opts)).toMatchObject({ status: 404 });
+    expect(await handleShareRequest("POST", id, opts, "Bearer tok-bob")).toMatchObject({ status: 404 });
+    expect(await handleShareRequest("POST", id, opts, null)).toMatchObject({ status: 401 });
+    expect(await handleShareRequest("PUT", id, opts, "Bearer tok-alice")).toMatchObject({ status: 400 });
+    expect(await handleShareRequest("POST", id, opts, "Bearer tok-alice")).toEqual({ status: 200, body: { ok: true, id, isPublic: true, path: `/p/${id}` } });
+    const shared = await handlePublicReportRequest(id, opts);
+    expect(shared).toMatchObject({ status: 200, body: { ok: true, id, isPublic: true, saved: { repository: { sha: SHA } } } });
+    expect(await handleReportRequest(id, opts, "Bearer tok-alice")).toMatchObject({ status: 200, body: { isPublic: true } });
+    expect(await handleShareRequest("DELETE", id, opts, "Bearer tok-alice")).toEqual({ status: 200, body: { ok: true, id, isPublic: false, path: null } });
+    expect(await handlePublicReportRequest(id, opts)).toMatchObject({ status: 404 });
+    expect(await handlePublicReportRequest("../x", opts)).toMatchObject({ status: 404 });
+    expect(await handlePublicReportRequest(id, { ...opts, closed: true })).toMatchObject({ status: 404 });
+  });
+
+  it("the Supabase store patches the public flag scoped to the owner and reads only shared rows", async () => {
+    const calls: { method: string; url: string; body: string | undefined }[] = [];
+    // eslint-disable-next-line @typescript-eslint/require-await
+    const f = (async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      calls.push({ method: init?.method ?? "GET", url, body: typeof init?.body === "string" ? init.body : undefined });
+      const row = { id: "33333333-3333-4333-8333-333333333333", user_id: ALICE.id, owner: "o", repo: "r", ref: null, sha: SHA, cached_from: null, body: { n: 1 }, created_at: "2026-10-28T09:00:00+00:00", expires_at: "2026-11-27T09:00:00+00:00", public: true };
+      return new Response(JSON.stringify([row]));
+    }) as typeof fetch;
+    const store = createSupabaseStore({ url: "https://p.supabase.co", serviceKey: "service", fetch: f });
+    const id = "33333333-3333-4333-8333-333333333333";
+    expect((await store.setPublic(id, ALICE.id, true))?.isPublic).toBe(true);
+    expect(calls[0]).toMatchObject({ method: "PATCH", body: JSON.stringify({ public: true }) });
+    expect(decodeURIComponent(calls[0]?.url ?? "")).toContain(`id=eq.${id}&user_id=eq.${ALICE.id}`);
+    expect((await store.getPublic(id))?.id).toBe(id);
+    expect(decodeURIComponent(calls[1]?.url ?? "")).toContain(`id=eq.${id}&public=is.true`);
+    expect(await store.getPublic("nope")).toBeNull();
+    expect(calls).toHaveLength(2);
+  });
+});
+
+describe("handleExampleRequest", () => {
+  it("analyzes the example repository without a session or quota, then reuses it from memory and from any account's report", async () => {
+    resetExampleCache();
+    const gh = fakeGitHub();
+    const store = createMemoryStore();
+    const opts = baseOptions(gh, { auth, store, exampleRepo: "https://github.com/o/r" });
+    const first = await handleExampleRequest(opts);
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({ ok: true, id: null, cached: false, quota: null, repository: { sha: SHA } });
+    expect(gh.calls.filter((c) => c.includes("codeload")).length).toBe(1);
+    const second = await handleExampleRequest(opts);
+    expect(second.body).toMatchObject({ ok: true, cached: true });
+    expect(gh.calls.filter((c) => c.includes("codeload")).length).toBe(1);
+    // Concurrent callers share one analysis.
+    resetExampleCache();
+    const [a, b] = await Promise.all([handleExampleRequest(opts), handleExampleRequest(opts)]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(gh.calls.filter((c) => c.includes("codeload")).length).toBe(2);
+    // A fresh instance finds a report any account produced for the same commit.
+    resetExampleCache();
+    await handleScanRequest({ url: "https://github.com/o/r" }, opts, "Bearer tok-alice");
+    const downloads = gh.calls.filter((c) => c.includes("codeload")).length;
+    expect((await handleExampleRequest(opts)).body).toMatchObject({ ok: true, cached: true });
+    expect(gh.calls.filter((c) => c.includes("codeload")).length).toBe(downloads);
+    expect(await store.claimQuota("example", 10, 3600)).toMatchObject({ used: 1 });
+  });
+
+  it("is a 404 without an example repository and refuses when the deployment is closed", async () => {
+    resetExampleCache();
+    const gh = fakeGitHub();
+    expect((await handleExampleRequest(baseOptions(gh, { auth, store: createMemoryStore() }))).status).toBe(404);
+    expect((await handleExampleRequest(baseOptions(gh, { exampleRepo: "https://github.com/o/r", closed: true }))).status).toBe(503);
+    expect(gh.calls).toHaveLength(0);
+  });
+});
+
+describe("handleFunnelRequest", () => {
+  it("answers only the configured admin logins, with counters, analyses and follows of the last two weeks", async () => {
+    const gh = fakeGitHub();
+    const store = createMemoryStore();
+    const opts = baseOptions(gh, { auth, store, adminLogins: ["Alice"] });
+    await store.countEvent("login_view");
+    await store.countEvent("login_view");
+    await store.countEvent("signin_complete");
+    await handleScanRequest({ url: "https://github.com/o/r" }, opts, "Bearer tok-alice");
+    await store.follow(ALICE.id, "o", "r", 10);
+    expect(await handleFunnelRequest(opts, null)).toMatchObject({ status: 401 });
+    expect(await handleFunnelRequest(opts, "Bearer tok-bob")).toMatchObject({ status: 404 });
+    expect(await handleFunnelRequest({ ...opts, adminLogins: [] }, "Bearer tok-alice")).toMatchObject({ status: 404 });
+    const out = await handleFunnelRequest(opts, "Bearer tok-alice");
+    expect(out.status).toBe(200);
+    const body = out.body as { events: { kind: string; count: number }[]; scans: { scans: number; accounts: number }; follows: number; days: number };
+    expect(body.days).toBe(14);
+    expect(body.events.find((e) => e.kind === "login_view")?.count).toBe(2);
+    expect(body.events.find((e) => e.kind === "signin_complete")?.count).toBe(1);
+    expect(body.scans).toEqual({ scans: 1, accounts: 1 });
+    expect(body.follows).toBe(1);
   });
 });

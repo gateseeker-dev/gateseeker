@@ -31,6 +31,17 @@ npx gateseeker@beta scan . --baseline base.lock   # compare with a previous lock
 
         <Card>
           <CardHeader>
+            <CardTitle>Show it in your README</CardTitle>
+            <CardDescription>A small badge that links here. It says the repository is checked with Gateseeker; it never says the project is secure.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            <img src="/badge.svg" alt="checked with Gateseeker" width={178} height={20} className="justify-self-start" />
+            <pre className="overflow-x-auto rounded-md border bg-input p-4 font-mono text-xs leading-relaxed inset-shadow-solid"><code>{`[![checked with Gateseeker](https://gateseeker.vercel.app/badge.svg)](https://gateseeker.vercel.app)`}</code></pre>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle>What is next</CardTitle>
             <CardDescription>Following a repository with an email when something new appears, private repositories and team gate policies are on the roadmap. The engine, the rules and the Action stay open source. Tell us what you need on GitHub.</CardDescription>
           </CardHeader>

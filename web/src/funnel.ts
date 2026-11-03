@@ -6,7 +6,7 @@
  * page never waits on or reacts to the answer.
  */
 
-export type FunnelEvent = "login_view" | "login_start" | "signin_complete" | "email_click";
+export type FunnelEvent = "login_view" | "login_start" | "signin_complete" | "email_click" | "example_view" | "public_report_view";
 
 const SENT = "gateseeker:funnel:";
 const PENDING = "gateseeker:funnel:pending";
@@ -43,6 +43,16 @@ export function countLoginStart(): void {
     /* the completion will not be counted */
   }
   once("login_start");
+}
+
+/** A signed-out visitor opened the live example on the Home. */
+export function countExampleView(): void {
+  once("example_view");
+}
+
+/** A shared report (/p/<id>) was opened. */
+export function countPublicReportView(): void {
+  once("public_report_view");
 }
 
 /** A report was opened from the link in an alert email (docs/SPRINT_6.md 3.7): the link's own parameter, no tracking pixel. */

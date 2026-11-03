@@ -2,7 +2,7 @@ import { Card, CardContent, buttonVariants, cn } from "@gateseeker/ui-kit";
 import { ArrowRight, ListOrdered, ScanSearch, Siren } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { ExampleReport } from "../components/ExampleReport";
+import { LiveExample } from "../components/LiveExample";
 import { Link } from "../router";
 
 /**
@@ -32,7 +32,7 @@ export function Home() {
       </section>
 
       <section className="mb-16 sm:mb-20">
-        <ExampleReport />
+        <LiveExample />
       </section>
 
       <section className="mb-16 sm:mb-20" aria-labelledby="pillars">

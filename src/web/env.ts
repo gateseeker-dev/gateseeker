@@ -14,7 +14,8 @@ import { createMemoryStore, createSupabaseStore } from "./store.js";
  *                              production: Supabase Auth + Postgres store
  *   GATESEEKER_AUTH_STUB=1     local/e2e: fixed token "e2e-token", memory store (ignored when SUPABASE_URL is set)
  *   GATESEEKER_SCAN_LIMIT      analyses per user per hour (default 10)
- *   GATESEEKER_EXAMPLE_REPO    public GitHub URL behind "Try an example" (default: this project)
+ *   GATESEEKER_EXAMPLE_REPO    public GitHub URL behind "Try an example" and GET /api/example (default: this project)
+ *   GATESEEKER_ADMIN_LOGINS    comma-separated GitHub logins that may read GET /api/funnel (product counters)
  *   GITHUB_TOKEN               optional read-only token for the GitHub API limit
  *   GATESEEKER_FEED_KEY        HMAC key shared with the feed workflow (32+ characters); without it only the bundled advisory set is used
  *   GATESEEKER_EMAIL_KEY       key of the unsubscribe links (32+ characters); without it no email is sent
@@ -46,6 +47,14 @@ export const DEFAULT_EXAMPLE_REPO = "https://github.com/gateseeker-dev/gateseeke
 export function exampleRepoFromEnv(env: Env): string {
   const raw = env.GATESEEKER_EXAMPLE_REPO;
   return raw !== undefined && parseGitHubRepoUrl(raw).ok ? raw.trim() : DEFAULT_EXAMPLE_REPO;
+}
+
+/** GitHub logins (case-insensitive, stored lower-case) allowed to read the product counters. */
+export function adminLoginsFromEnv(env: Env): string[] {
+  return (env.GATESEEKER_ADMIN_LOGINS ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter((x) => /^[A-Za-z0-9-]{1,39}$/.test(x));
 }
 
 export const DEFAULT_PUBLIC_URL = "https://gateseeker.vercel.app";
@@ -100,6 +109,8 @@ export function handlerOptionsFromEnv({ env, workDir, fetch: fetchFn, requireAut
     ...(env.GATESEEKER_GITHUB_API ? { apiBase: env.GATESEEKER_GITHUB_API } : {}),
     ...(env.GATESEEKER_GITHUB_ARCHIVE ? { archiveBase: env.GATESEEKER_GITHUB_ARCHIVE } : {}),
     ...(env.GITHUB_TOKEN ? { githubToken: env.GITHUB_TOKEN } : {}),
+    exampleRepo: exampleRepoFromEnv(env),
+    adminLogins: adminLoginsFromEnv(env),
     // A short key is ignored rather than trusted: published sets are then not used and the reports say "bundled".
     ...(env.GATESEEKER_FEED_KEY && env.GATESEEKER_FEED_KEY.length >= MIN_FEED_KEY_LENGTH ? { feedKey: env.GATESEEKER_FEED_KEY } : {}),
   };

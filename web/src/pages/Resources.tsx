@@ -26,6 +26,7 @@ const SC: { id: string; what: string; severity: string }[] = [
 ];
 
 const DOCS: { title: string; text: string; href: string }[] = [
+  { title: "Curated advisories", text: "Incidents the public databases missed or recorded late, reviewed by a person before the scanner uses them.", href: "/advisories" },
   { title: "README", text: "Installation, CLI usage, the GitHub Action inputs and outputs, exit codes.", href: `${REPO}#readme` },
   { title: "Architecture", text: "How the parser, intelligence, rules and report layers fit, and what each never does.", href: `${REPO}/blob/main/docs/ARCHITECTURE.md` },
   { title: "Threat model", text: "What Gateseeker defends against, what it does not, and the limits that enforce it.", href: `${REPO}/blob/main/docs/THREAT_MODEL.md` },

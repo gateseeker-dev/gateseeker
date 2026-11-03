@@ -15,6 +15,8 @@ import { HowItWorks } from "./pages/HowItWorks";
 import { Privacy, Terms } from "./pages/Legal";
 import { Login } from "./pages/Login";
 import { Resources, WorkspaceResources } from "./pages/Resources";
+import { Advisories, AdvisoryPage } from "./pages/Advisories";
+import { PublicReportPage } from "./pages/PublicReport";
 import { SavedReport } from "./pages/SavedReport";
 import { Scans } from "./pages/Scans";
 import { SettingsPage } from "./pages/Settings";
@@ -46,6 +48,7 @@ const TITLES: Record<string, string> = {
   "/unsubscribe": "Stop following · Gateseeker",
   "/privacy": "Privacy · Gateseeker",
   "/terms": "Terms of use · Gateseeker",
+  "/advisories": "Curated advisories · Gateseeker",
   "/app": "Analyze a repository · Gateseeker",
   "/app/design-system": "Design system · Gateseeker",
   "/app/settings": "Settings · Gateseeker",
@@ -61,6 +64,8 @@ const WORKSPACE_COUNTERPART: Record<string, string> = { "/resources": "/app/reso
 const WORKSPACE_HOME = "/app/dashboard";
 
 const REPORT_ROUTE = /^\/r\/([A-Za-z0-9-]{1,64})$/;
+const PUBLIC_REPORT_ROUTE = /^\/p\/([A-Za-z0-9-]{1,64})$/;
+const ADVISORY_ROUTE = /^\/advisories\/(GSK-ADV-\d{4}-\d{4})$/;
 
 export function App() {
   return (
@@ -85,8 +90,10 @@ function Shell() {
   const auth = useAuth();
   const [open, setOpen] = useState(false);
   const reportId = REPORT_ROUTE.exec(path)?.[1] ?? null;
+  const publicReportId = PUBLIC_REPORT_ROUTE.exec(path)?.[1] ?? null;
+  const advisoryId = ADVISORY_ROUTE.exec(path)?.[1] ?? null;
   useEffect(() => {
-    document.title = TITLES[path] ?? (reportId ? "Scan · Gateseeker" : "Gateseeker");
+    document.title = TITLES[path] ?? (reportId ? "Scan · Gateseeker" : publicReportId ? "Shared report · Gateseeker" : advisoryId ? `${advisoryId} · Gateseeker` : "Gateseeker");
     setOpen(false);
   }, [path, reportId]);
   useEffect(() => {
@@ -106,6 +113,9 @@ function Shell() {
   else if (path === "/unsubscribe") page = <Unsubscribe />;
   else if (path === "/privacy") page = <Privacy />;
   else if (path === "/terms") page = <Terms />;
+  else if (path === "/advisories") page = <Advisories />;
+  else if (advisoryId) page = <AdvisoryPage id={advisoryId} />;
+  else if (publicReportId) page = <PublicReportPage id={publicReportId} />;
   else if (path === "/app") page = <AnalyzePage />;
   else if (path === "/app/design-system") page = <DesignSystem />;
   else if (path === "/app/settings") page = <SettingsPage />;

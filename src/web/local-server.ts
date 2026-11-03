@@ -4,7 +4,7 @@ import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { authConfigFromEnv, exampleRepoFromEnv, handlerOptionsFromEnv } from "./env.js";
-import { handleAccountRequest, handleCleanupRequest, handleEventRequest, handleFeedPublishedRequest, handleUnsubscribeRequest, handleFollowsRequest, handleMonitorRequest, handleReportRequest, handleScanRequest, handleScansRequest } from "./handler.js";
+import { handleAccountRequest, handleExampleRequest, handleFunnelRequest, handlePublicReportRequest, handleShareRequest, handleCleanupRequest, handleEventRequest, handleFeedPublishedRequest, handleUnsubscribeRequest, handleFollowsRequest, handleMonitorRequest, handleReportRequest, handleScanRequest, handleScansRequest } from "./handler.js";
 
 /**
  * Development and end-to-end server for the public page: serves web/dist and
@@ -14,6 +14,10 @@ import { handleAccountRequest, handleCleanupRequest, handleEventRequest, handleF
  *   GET  /api/config          auth mode for the page
  *   POST /api/scan            analyze (bearer token when auth is configured)
  *   GET  /api/reports/<id>    a saved report of the signed-in user
+ *   POST/DELETE /api/reports/<id>/share  share or unshare it at /p/<id>
+ *   GET  /api/public/<id>     a shared report (no session)
+ *   GET  /api/example         the example repository's report (no session, no quota)
+ *   GET  /api/funnel          product counters (GATESEEKER_ADMIN_LOGINS only)
  *   GET/POST/DELETE /api/follows  followed repositories of the signed-in user
  *   DELETE /api/account       delete the signed-in account and its data ({confirm: login})
  *   GET  /api/cron/monitor    rescan due followed repositories (bearer CRON_SECRET)
@@ -201,9 +205,27 @@ const server = createServer((req, res) => {
     void handleScansRequest(options, authorization).then((out) => { json(res, out.status, out.body); });
     return;
   }
+  const shareMatch = /^\/api\/reports\/([A-Za-z0-9-]{1,64})\/share$/.exec(url.pathname);
+  if (shareMatch) {
+    void handleShareRequest(req.method ?? "GET", shareMatch[1] ?? "", options, authorization).then((out) => { json(res, out.status, out.body); });
+    return;
+  }
   const reportMatch = /^\/api\/reports\/([A-Za-z0-9-]{1,64})$/.exec(url.pathname);
   if (reportMatch) {
     void handleReportRequest(reportMatch[1] ?? "", options, authorization).then((out) => { json(res, out.status, out.body); });
+    return;
+  }
+  const publicMatch = /^\/api\/public\/([A-Za-z0-9-]{1,64})$/.exec(url.pathname);
+  if (publicMatch) {
+    void handlePublicReportRequest(publicMatch[1] ?? "", options).then((out) => { json(res, out.status, out.body); });
+    return;
+  }
+  if (url.pathname === "/api/example") {
+    void handleExampleRequest(options).then((out) => { json(res, out.status, out.body); });
+    return;
+  }
+  if (url.pathname === "/api/funnel") {
+    void handleFunnelRequest(options, authorization).then((out) => { json(res, out.status, out.body); });
     return;
   }
   if (url.pathname === "/api/event") {

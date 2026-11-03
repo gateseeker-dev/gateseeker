@@ -11,7 +11,7 @@ import { bearerToken, type AuthUser, type AuthVerifier } from "./auth.js";
 import { resolveGitHubRepository, scanGitHubRepository, type ServiceErrorCode, type ServiceOptions, type ServiceSuccess } from "./service.js";
 import { alertEmail, alertItem, followConfirmationEmail, mergeAlert, pausedEmail, verifyUnsubscribe, type AlertItem, type EmailContext, type PendingAlert } from "./emails.js";
 import type { EmailDirectory, EmailMessage, Mailer } from "./mail.js";
-import { CLIENT_EVENT_KINDS, StoreError, type EventKind, type FollowRecord, type QuotaDecision, type ReportStore } from "./store.js";
+import { CLIENT_EVENT_KINDS, StoreError, type EventCount, type EventKind, type FollowRecord, type QuotaDecision, type ReportStore } from "./store.js";
 
 /**
  * Framework-agnostic HTTP handlers for the hosted service, shared by the
@@ -51,7 +51,25 @@ export interface ScanResponseError {
 
 export interface HttpResponse {
   status: number;
-  body: ScanResponseOk | ScanResponseError | ReportResponseOk | CleanupResponse | EventResponse | ScansResponse | FollowsResponse | MonitorResponse | FeedPublishedResponse | UnsubscribeResponse;
+  body: ScanResponseOk | ScanResponseError | ReportResponseOk | CleanupResponse | EventResponse | ScansResponse | FollowsResponse | MonitorResponse | FeedPublishedResponse | UnsubscribeResponse | ShareResponse | FunnelResponse;
+}
+
+export interface ShareResponse {
+  ok: true;
+  id: string;
+  isPublic: boolean;
+  /** Site path of the public page, present while shared. */
+  path: string | null;
+}
+
+export interface FunnelResponse {
+  ok: true;
+  /** First UTC day covered (inclusive). */
+  since: string;
+  days: number;
+  events: EventCount[];
+  scans: { scans: number; accounts: number };
+  follows: number;
 }
 
 /** What is persisted per report: the scan answer minus id, quota and cache flag, which belong to the moment of the request. */
@@ -63,6 +81,8 @@ export interface ReportResponseOk {
   createdAt: string;
   expiresAt: string;
   saved: SavedScan;
+  /** Whether the owner shared this report at /p/<id>. */
+  isPublic: boolean;
 }
 
 export interface CleanupResponse {
@@ -96,6 +116,10 @@ export interface HandlerOptions extends Omit<ServiceOptions, "url"> {
   feedKey?: string;
   /** Email alerts of the monitor; absent: no email is sent and unsubscribe links are refused. */
   mail?: MailSettings;
+  /** Public GitHub URL analyzed by GET /api/example for signed-out visitors. */
+  exampleRepo?: string;
+  /** GitHub logins allowed to read the product counters (GATESEEKER_ADMIN_LOGINS). */
+  adminLogins?: string[];
 }
 
 export interface MailSettings {
@@ -358,7 +382,127 @@ export async function handleReportRequest(id: string, options: HandlerOptions, a
   try {
     const r = await store.get(id, who.id);
     if (!r) return fail("not-found", "No report with this id, or it belongs to another account.");
-    return { status: 200, body: { ok: true, id: r.id, createdAt: r.createdAt, expiresAt: r.expiresAt, saved: r.body as SavedScan } };
+    return { status: 200, body: { ok: true, id: r.id, createdAt: r.createdAt, expiresAt: r.expiresAt, saved: r.body as SavedScan, isPublic: r.isPublic } };
+  } catch (e) {
+    return storeFailure(e);
+  }
+}
+
+// --- public link, example and product counters (growth round, docs/GROWTH.md) --
+
+const REPORT_ID = /^[A-Za-z0-9-]{1,64}$/;
+
+/**
+ * POST /api/reports/<id>/share makes a saved report readable by anyone with
+ * /p/<id>; DELETE takes it back. Only the owner can; the stored body was
+ * redacted before it was saved, so sharing never exposes a secret.
+ */
+export async function handleShareRequest(method: string, id: string, options: HandlerOptions, authorization?: string | null): Promise<HttpResponse> {
+  const store = options.store;
+  if (!store) return fail("not-found", "Saved reports are not available on this server.");
+  if (method !== "POST" && method !== "DELETE") return fail("bad-request", "POST shares, DELETE unshares.");
+  if (!REPORT_ID.test(id)) return fail("not-found", "No report with this id.");
+  const who = await authenticate(options, authorization);
+  if (isResponse(who)) return who;
+  try {
+    const r = await store.setPublic(id, who.id, method === "POST");
+    if (!r) return fail("not-found", "No report with this id, or it belongs to another account.");
+    return { status: 200, body: { ok: true, id: r.id, isPublic: r.isPublic, path: r.isPublic ? `/p/${r.id}` : null } };
+  } catch (e) {
+    return storeFailure(e);
+  }
+}
+
+/** GET /api/public/<id>: a shared report, no session needed. */
+export async function handlePublicReportRequest(id: string, options: HandlerOptions): Promise<HttpResponse> {
+  const store = options.store;
+  if (!store || options.closed) return fail("not-found", "Shared reports are not available on this server.");
+  if (!REPORT_ID.test(id)) return fail("not-found", "No shared report with this id.");
+  try {
+    const r = await store.getPublic(id);
+    if (!r) return fail("not-found", "No shared report with this id. Its owner may have stopped sharing it, or it expired.");
+    return { status: 200, body: { ok: true, id: r.id, createdAt: r.createdAt, expiresAt: r.expiresAt, saved: r.body as SavedScan, isPublic: true } };
+  } catch (e) {
+    return storeFailure(e);
+  }
+}
+
+/**
+ * GET /api/example: the report of the example repository for a visitor who
+ * has not signed in. No quota: the repository is ours, the commit is reused
+ * from any account's report of it (24 h) or from this instance's memory, and
+ * at most one analysis runs at a time per instance. Nothing is saved.
+ */
+interface ExampleCache {
+  sha: string;
+  at: number;
+  body: SavedScan;
+}
+let exampleCache: ExampleCache | null = null;
+let exampleInFlight: Promise<HttpResponse> | null = null;
+
+export async function handleExampleRequest(options: HandlerOptions): Promise<HttpResponse> {
+  if (options.closed) return fail("store-unavailable", "Sign-in is not configured on this server, so analyses are disabled.");
+  const url = options.exampleRepo;
+  if (!url) return fail("not-found", "No example repository is configured.");
+  if (exampleInFlight) return exampleInFlight;
+  exampleInFlight = (async (): Promise<HttpResponse> => {
+    options = await withFeed(options);
+    const resolved = await resolveGitHubRepository({ ...options, url });
+    if (!resolved.ok) return { status: STATUS[resolved.error.code], body: { ok: false, error: resolved.error } };
+    const repository = resolved.value;
+    const cacheMs = options.cacheMs ?? DEFAULT_CACHE_MS;
+    const now = (options.now ?? (() => new Date()))().getTime();
+    if (exampleCache?.sha === repository.sha && now - exampleCache.at < cacheMs && (await reusable(exampleCache.body, options))) {
+      return { status: 200, body: { ...exampleCache.body, id: null, cached: true, quota: null } };
+    }
+    if (options.store && cacheMs > 0) {
+      try {
+        const hit = await options.store.findRecent(repository.owner, repository.repo, repository.sha, cacheMs);
+        if (hit && (await reusable(hit.body as SavedScan, options))) {
+          exampleCache = { sha: repository.sha, at: now, body: hit.body as SavedScan };
+          return { status: 200, body: { ...exampleCache.body, id: null, cached: true, quota: null } };
+        }
+      } catch {
+        /* the store is optional here: fall through to a fresh analysis */
+      }
+    }
+    const result = await scanGitHubRepository({ ...options, url, resolved: repository });
+    if (!result.ok) return { status: STATUS[result.error.code], body: { ok: false, error: result.error } };
+    const { archive, timings, report } = result.value;
+    const fresh: SavedScan = { ok: true, repository: result.value.repository, archive, timings, report: toPublicReport(report) };
+    exampleCache = { sha: repository.sha, at: now, body: fresh };
+    return { status: 200, body: { ...fresh, id: null, cached: false, quota: null } };
+  })().finally(() => { exampleInFlight = null; });
+  return exampleInFlight;
+}
+
+/** Tests only: forgets the example kept in this module. */
+export function resetExampleCache(): void {
+  exampleCache = null;
+}
+
+export const FUNNEL_DAYS = 14;
+
+/**
+ * GET /api/funnel: the aggregate counters of the last two weeks (login
+ * funnel, example views, rescans, emails), analyses and accounts in that
+ * window, and followed repositories. Only for the logins in
+ * GATESEEKER_ADMIN_LOGINS; anyone else gets the same 404 as a wrong path.
+ */
+export async function handleFunnelRequest(options: HandlerOptions, authorization?: string | null): Promise<HttpResponse> {
+  const store = options.store;
+  if (!store) return fail("not-found", "No such route.");
+  const who = await authenticate(options, authorization);
+  if (isResponse(who)) return who;
+  const admins = (options.adminLogins ?? []).map((x) => x.toLowerCase());
+  if (who.login === null || !admins.includes(who.login.toLowerCase())) return fail("not-found", "No such route.");
+  const now = options.now ?? (() => new Date());
+  const since = new Date(now().getTime() - (FUNNEL_DAYS - 1) * 86_400_000);
+  const sinceDay = since.toISOString().slice(0, 10);
+  try {
+    const [events, scans, follows] = await Promise.all([store.listEvents(sinceDay), store.countScans(`${sinceDay}T00:00:00.000Z`), store.countFollows()]);
+    return { status: 200, body: { ok: true, since: sinceDay, days: FUNNEL_DAYS, events, scans, follows } };
   } catch (e) {
     return storeFailure(e);
   }
