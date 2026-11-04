@@ -31,7 +31,7 @@ function Section({ title, description, children }: { title: string; description:
 
 function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b pb-3 last:border-b-0 last:pb-0">
+    <div className="grid gap-x-6 gap-y-1 border-b pb-3 last:border-b-0 last:pb-0 sm:grid-cols-[9rem_1fr]">
       <dt className="text-body text-muted-foreground">{label}</dt>
       <dd className="text-body font-medium">{value}</dd>
     </div>
