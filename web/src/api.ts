@@ -6,13 +6,20 @@ export type { Finding } from "gateseeker/dist/types.js";
 export type ScanOutcome = ScanResponseOk | ScanResponseError;
 export type ReportOutcome = ReportResponseOk | ScanResponseError;
 
+/** Fired on `window` when the service answers 401 to a call made with a session token: the session is gone (expired, or ended elsewhere). */
+export const SESSION_INVALID_EVENT = "gateseeker:session-invalid";
+
 async function call<T>(input: string, init: RequestInit, token: string | null): Promise<T | ScanResponseError> {
   try {
     const headers: Record<string, string> = { ...(init.headers as Record<string, string> | undefined), ...(token ? { authorization: `Bearer ${token}` } : {}) };
     const res = await fetch(input, { ...init, headers });
     const text = await res.text();
     try {
-      return JSON.parse(text) as T | ScanResponseError;
+      const body = JSON.parse(text) as T | ScanResponseError;
+      if (token && res.status === 401 && typeof body === "object" && body !== null && "ok" in body && !body.ok && (body as ScanResponseError).error.code === "unauthorized") {
+        window.dispatchEvent(new Event(SESSION_INVALID_EVENT));
+      }
+      return body;
     } catch {
       return { ok: false, error: { code: "upstream-error", message: `The service answered HTTP ${String(res.status)} without a readable body.` } };
     }

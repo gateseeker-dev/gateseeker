@@ -29,6 +29,7 @@ export interface AuthClient {
   getSession(): Promise<Session | null>;
   /** Starts sign-in; may navigate away (OAuth). `next` is the in-app path to return to. */
   signIn(next: string): Promise<void>;
+  /** Ends this browser's session only: other devices and browsers stay signed in. */
   signOut(): Promise<void>;
   onChange(cb: (s: Session | null) => void): () => void;
 }
@@ -94,7 +95,9 @@ function supabaseAuth(url: string, anonKey: string): AuthClient {
       await client.auth.signInWithOAuth({ provider: "github", options: { redirectTo: `${window.location.origin}/login` } });
     },
     async signOut() {
-      await client.auth.signOut();
+      // "local": the user's session on this browser only. The default ("global") would end
+      // every session of the account, including other browsers and devices.
+      await client.auth.signOut({ scope: "local" });
     },
     onChange(cb) {
       const { data } = client.auth.onAuthStateChange((_event, s) => { cb(toSession(s)); });

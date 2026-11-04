@@ -16,7 +16,9 @@ import { Link, navigate } from "../router";
 export function Login() {
   const auth = useAuth();
   const [busy, setBusy] = useState(false);
-  const next = safeNext(new URLSearchParams(window.location.search).get("next") ?? "/app");
+  const params = new URLSearchParams(window.location.search);
+  const next = safeNext(params.get("next") ?? "/app");
+  const expired = params.get("reason") === "expired";
 
   useEffect(() => {
     if (auth.status === "signed-out") countLoginView();
@@ -44,7 +46,7 @@ export function Login() {
             <ShieldCheck className="size-5" aria-hidden="true" />
           </span>
           <h1 className="text-xl font-semibold leading-snug tracking-tight">Log in</h1>
-          <CardDescription>Sign in to open the demo workspace and analyze a public GitHub repository.</CardDescription>
+          <CardDescription>{expired ? "Your session ended (it expired, or was signed out elsewhere). Sign in again to continue where you were." : "Sign in to open the demo workspace and analyze a public GitHub repository."}</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
           <Button size="lg" className="h-11 w-full" disabled={busy || auth.status === "loading" || unavailable} onClick={() => void start()}>

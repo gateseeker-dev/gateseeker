@@ -486,6 +486,22 @@ test.describe("public page", () => {
     expect((await page.request.get("/api/admin/overview", { headers: { authorization: "Bearer not-admin" } })).status()).toBe(401);
   });
 
+  test("a session the service rejects ends locally and the login page opens with the way back", async ({ page }) => {
+    await signIn(page);
+    await page.goto("/app/dashboard");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("How your repositories are doing");
+    // The service stops accepting the token (as after an expiry, or a sign-out from another browser).
+    await page.route("**/api/scans", (route) => route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ ok: false, error: { code: "unauthorized", message: "Your session is invalid or has expired. Sign in again." } }) }));
+    await page.goto("/app/scans");
+    await expect(page).toHaveURL(/\/login\?reason=expired&next=%2Fapp%2Fscans$/);
+    await expect(page.getByText("Your session ended")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue with GitHub" })).toBeEnabled();
+    // Signing in again returns to the page that was open.
+    await page.unroute("**/api/scans");
+    await page.getByRole("button", { name: "Continue with GitHub" }).click();
+    await expect(page).toHaveURL(/\/app\/scans$/);
+  });
+
   test("tells an open workspace about a newer version and offers to reload", async ({ page }) => {
     await signIn(page);
     await page.goto("/app/dashboard");
