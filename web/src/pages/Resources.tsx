@@ -71,7 +71,7 @@ export function Resources() {
 /** The same content inside the workspace (/app/resources); the header already says "Resources". */
 export function WorkspaceResources() {
   return (
-    <div className="grid max-w-[1012px] gap-6">
+    <div className="grid gap-6">
       <div>
         <h1 className="text-display font-medium">Rules, limits and documentation</h1>
         <p className="text-label text-muted-foreground">{LEAD}</p>

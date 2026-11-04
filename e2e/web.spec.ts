@@ -456,13 +456,14 @@ test.describe("public page", () => {
     await analyze(page, "https://github.com/acme/vibe");
     await expect(page).toHaveURL(/\/r\/mem-/, { timeout: 30_000 });
     await page.goto("/app/dashboard");
-    // The switch exists for the configured admin only (e2e-user); User is the plain workspace.
-    const view = page.getByRole("radiogroup", { name: "Workspace view" });
+    // The "View as" dropdown exists for the configured admin only (e2e-user); User is the plain workspace.
+    const view = page.getByRole("combobox", { name: "View as" });
     await expect(view).toBeVisible();
-    await expect(view.getByRole("radio", { name: "User" })).toHaveAttribute("aria-checked", "true");
+    await expect(view).toHaveValue("user");
     await expect(page.getByRole("navigation", { name: "Workspace" }).getByRole("link", { name: "Overview" })).toHaveCount(0);
-    await view.getByRole("radio", { name: "Admin" }).click();
+    await view.selectOption("admin");
     await expect(page).toHaveURL(/\/app\/admin$/);
+    await expect(page.getByRole("combobox", { name: "View as" })).toHaveValue("admin");
     const overview = page.getByTestId("admin-overview");
     await expect(overview).toBeVisible();
     await expect(overview).toContainText("Accounts");
@@ -476,7 +477,7 @@ test.describe("public page", () => {
     await expect(account).toContainText("acme/vibe");
     await expect(account).not.toContainText("GSK-");
     // Back to the user view: the plain sidebar again.
-    await page.getByRole("radiogroup", { name: "Workspace view" }).getByRole("radio", { name: "User" }).click();
+    await page.getByRole("combobox", { name: "View as" }).selectOption("user");
     await expect(page).toHaveURL(/\/app\/dashboard$/);
     await expect(page.getByRole("navigation", { name: "Workspace" }).getByRole("link", { name: "Scans" })).toBeVisible();
     // The service answers nobody else.

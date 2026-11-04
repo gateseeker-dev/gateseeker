@@ -1,4 +1,4 @@
-import { AppShell, Avatar, Button, Logo, Menu, Segmented, Skeleton, buttonVariants, menuItemClass, navItemClass } from "@gateseeker/ui-kit";
+import { AppShell, Avatar, Button, Logo, Menu, Select, Skeleton, buttonVariants, menuItemClass, navItemClass } from "@gateseeker/ui-kit";
 import { ArrowLeft, Bell, BookOpen, ChevronUp, Gauge, History, LayoutDashboard, LogOut, Palette, ScanSearch, Settings, Users } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
@@ -8,7 +8,7 @@ import { NotificationsPanel } from "./components/NotificationsPanel";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { useNotifications } from "./notifications";
 import { Link, navigate } from "./router";
-import { rememberWorkspacePath } from "./scan-note";
+import { rememberWorkspacePath, workspaceBackPath } from "./scan-note";
 import { useUpdateNotice } from "./update-notice";
 
 /**
@@ -18,7 +18,10 @@ import { useUpdateNotice } from "./update-notice";
  * the bottom. The header carries the Analyze button (also "/" from anywhere),
  * which opens the full-screen analyze view at /app. "Scans" lists every analysis; an opened scan (/r/<id>) keeps
  * that item active and puts a back button to the list before its title,
- * which the page sets with useWorkspaceTitle once the report has loaded. The design-system catalogue is product documentation: it uses the
+ * which the page sets with useWorkspaceTitle once the report has loaded.
+ * Settings (opened from the account menu) gets a back button to the page
+ * it was opened from. Admin masters get a "View as" dropdown at the top of
+ * the sidebar that moves between the user workspace and the admin area. The design-system catalogue is product documentation: it uses the
  * frame but has no entry in the sidebar (open /app/design-system directly).
  * While the session is being read (`loading`), the frame renders with
  * skeletons so the page does not jump when it arrives.
@@ -57,9 +60,9 @@ export function Workspace({ page, loading = false, children }: { page: Workspace
   const adminMode = ADMIN_PAGES.has(page);
   const update = useUpdateNotice(auth.session?.user.id ?? null);
 
-  // The analyze view's back button returns here.
+  // The analyze view's back button, and the Settings back button, return here.
   useEffect(() => {
-    rememberWorkspacePath(window.location.pathname);
+    if (page !== "settings") rememberWorkspacePath(window.location.pathname);
   });
 
   // "/" opens the analyze view from anywhere in the workspace, unless the person is typing.
@@ -101,17 +104,17 @@ export function Workspace({ page, loading = false, children }: { page: Workspace
   );
 
   const modeSwitch = isAdmin === true && (
-    <div className="px-3 pb-3">
-      <Segmented
-        label="Workspace view"
-        className="w-full"
+    <div className="grid gap-1 px-3 pb-3">
+      <label htmlFor="workspace-view" className="text-label text-muted-foreground">View as</label>
+      <Select
+        id="workspace-view"
+        className="h-9"
         value={adminMode ? "admin" : "user"}
-        options={[
-          { value: "user", label: "User" },
-          { value: "admin", label: "Admin" },
-        ]}
-        onChange={(v) => { navigate(v === "admin" ? "/app/admin" : "/app/dashboard"); }}
-      />
+        onChange={(e) => { navigate(e.target.value === "admin" ? "/app/admin" : "/app/dashboard"); }}
+      >
+        <option value="user">User</option>
+        <option value="admin">Admin</option>
+      </Select>
     </div>
   );
 
@@ -165,6 +168,13 @@ export function Workspace({ page, loading = false, children }: { page: Workspace
           <ArrowLeft className="text-primary" aria-hidden="true" />
         </Link>
         <span className="truncate">{customTitle ?? TITLE.scan}</span>
+      </span>
+    ) : page === "settings" ? (
+      <span className="flex min-w-0 items-center gap-2">
+        <Link href={workspaceBackPath()} aria-label="Back" title="Back" className={buttonVariants({ variant: "outline", size: "icon" })}>
+          <ArrowLeft className="text-primary" aria-hidden="true" />
+        </Link>
+        <span className="truncate">{customTitle ?? TITLE.settings}</span>
       </span>
     ) : (
       customTitle ?? TITLE[page]
