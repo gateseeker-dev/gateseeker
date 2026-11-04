@@ -69,6 +69,13 @@ export interface ServiceOptions {
   userAgent?: string;
   /** Optional GitHub token (read-only, public repositories) to lift the anonymous API limit; never logged, never in reports. */
   githubToken?: string;
+  /**
+   * A GitHub App installation token for a private repository (docs/SPRINT_8.md):
+   * metadata, commit and archive are read with it, the archive through the API
+   * (`/repos/{owner}/{repo}/tarball/{sha}`, which GitHub redirects to a signed
+   * download). Used for one analysis and never stored, logged or returned.
+   */
+  installationToken?: string;
   /** A repository already resolved by `resolveGitHubRepository`; skips the two metadata calls. */
   resolved?: ResolvedRepository;
 }
@@ -77,6 +84,8 @@ export interface ResolvedRepository extends GitHubRepoRef {
   sha: string;
   defaultBranch: string;
   htmlUrl: string;
+  /** True when the repository was read through an installation token (absent in reports saved before Sprint 8). */
+  isPrivate?: boolean;
 }
 
 export type ResolveResult = { ok: true; value: ResolvedRepository } | { ok: false; error: ServiceError };
@@ -135,10 +144,11 @@ const UA = "gateseeker-web (+https://github.com/gateseeker-dev/gateseeker)";
 
 type ApiAnswer = { kind: "http"; status: number; json: unknown } | { kind: "network"; message: string };
 
-function githubApi(options: Pick<ServiceOptions, "fetch" | "apiBase" | "userAgent" | "githubToken">, signal: AbortSignal): (path: string) => Promise<ApiAnswer> {
+function githubApi(options: Pick<ServiceOptions, "fetch" | "apiBase" | "userAgent" | "githubToken" | "installationToken">, signal: AbortSignal): (path: string) => Promise<ApiAnswer> {
   const fetchFn = options.fetch ?? globalThis.fetch;
   const apiBase = (options.apiBase ?? "https://api.github.com").replace(/\/$/, "");
   const ua = options.userAgent ?? UA;
+  const token = options.installationToken ?? options.githubToken;
   return async (path) => {
     try {
       const res = await fetchFn(`${apiBase}${path}`, {
@@ -146,7 +156,7 @@ function githubApi(options: Pick<ServiceOptions, "fetch" | "apiBase" | "userAgen
           accept: "application/vnd.github+json",
           "user-agent": ua,
           "x-github-api-version": "2022-11-28",
-          ...(options.githubToken ? { authorization: `Bearer ${options.githubToken}` } : {}),
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
         },
         signal,
       });
@@ -178,22 +188,22 @@ export async function resolveGitHubRepository(options: Omit<ServiceOptions, "res
   const controller = new AbortController();
   const timer = setTimeout(() => { controller.abort(); }, limits.totalTimeoutMs);
   try {
-    return await resolveWith(githubApi(options, controller.signal), controller.signal, owner, repo, ref, limits);
+    return await resolveWith(githubApi(options, controller.signal), controller.signal, owner, repo, ref, limits, options.installationToken !== undefined);
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function resolveWith(api: (path: string) => Promise<ApiAnswer>, signal: AbortSignal, owner: string, repo: string, ref: string | null, limits: ServiceLimits): Promise<ResolveResult> {
+async function resolveWith(api: (path: string) => Promise<ApiAnswer>, signal: AbortSignal, owner: string, repo: string, ref: string | null, limits: ServiceLimits, withToken = false): Promise<ResolveResult> {
   // 1. Repository metadata: existence, visibility, size, default branch.
   const meta = await api(`/repos/${owner}/${repo}`);
   if (meta.kind === "network") return { ok: false, error: { code: signal.aborted ? "timeout" : "upstream-error", message: `GitHub could not be reached: ${meta.message}` } };
-  if (meta.status === 404) return { ok: false, error: { code: "not-found", message: `${owner}/${repo} was not found on GitHub, or it is private. Only public repositories can be analyzed.` } };
+  if (meta.status === 404) return { ok: false, error: { code: "not-found", message: withToken ? `${owner}/${repo} was not found on GitHub, or the authorization does not cover it.` : `${owner}/${repo} was not found on GitHub, or it is private.` } };
   if (meta.status === 403 || meta.status === 429) return { ok: false, error: { code: "upstream-error", message: "GitHub is rate-limiting this service right now. Try again in a few minutes." } };
   if (meta.status !== 200) return { ok: false, error: { code: "upstream-error", message: `GitHub answered HTTP ${meta.status} for the repository.` } };
   const repoInfo = repoSchema.safeParse(meta.json);
   if (!repoInfo.success) return { ok: false, error: { code: "upstream-error", message: "GitHub returned an unexpected repository record." } };
-  if (repoInfo.data.private) return { ok: false, error: { code: "private", message: `${owner}/${repo} is private. Only public repositories can be analyzed.` } };
+  if (repoInfo.data.private && !withToken) return { ok: false, error: { code: "private", message: `${owner}/${repo} is private.` } };
   if (repoInfo.data.size * 1024 > limits.maxRepositoryBytes) return { ok: false, error: { code: "too-large", message: `${owner}/${repo} is about ${Math.round(repoInfo.data.size / 1024)} MB; the hosted analysis accepts repositories up to ${Math.round(limits.maxRepositoryBytes / 1024 / 1024)} MB. Run the CLI locally for larger projects.` } };
 
   // 2. Resolve the ref to a commit so the archive, the cache key and the report agree.
@@ -204,7 +214,7 @@ async function resolveWith(api: (path: string) => Promise<ApiAnswer>, signal: Ab
   if (commit.status !== 200) return { ok: false, error: { code: "upstream-error", message: `GitHub answered HTTP ${commit.status} for the commit.` } };
   const commitInfo = commitSchema.safeParse(commit.json);
   if (!commitInfo.success) return { ok: false, error: { code: "upstream-error", message: "GitHub returned an unexpected commit record." } };
-  return { ok: true, value: { owner, repo, ref, sha: commitInfo.data.sha, defaultBranch: repoInfo.data.default_branch, htmlUrl: repoInfo.data.html_url } };
+  return { ok: true, value: { owner, repo, ref, sha: commitInfo.data.sha, defaultBranch: repoInfo.data.default_branch, htmlUrl: repoInfo.data.html_url, ...(repoInfo.data.private ? { isPrivate: true } : {}) } };
 }
 
 export async function scanGitHubRepository(options: ServiceOptions): Promise<ServiceResult> {
@@ -228,17 +238,20 @@ export async function scanGitHubRepository(options: ServiceOptions): Promise<Ser
     if (options.resolved?.owner === owner && options.resolved.repo === repo) {
       resolved = options.resolved;
     } else {
-      const r = await resolveWith(api, controller.signal, owner, repo, ref, limits);
+      const r = await resolveWith(api, controller.signal, owner, repo, ref, limits, options.installationToken !== undefined);
       if (!r.ok) return r;
       resolved = r.value;
     }
     const sha = resolved.sha;
 
-    // 3. Download the archive for that exact commit.
+    // 3. Download the archive for that exact commit. A private repository goes through the API with the installation
+    //    token (GitHub redirects to a signed download; the redirect drops the header, which is right).
     const dlStart = Date.now();
     let gz: Buffer | null;
     try {
-      const res = await fetchFn(`${archiveBase}/${owner}/${repo}/tar.gz/${sha}`, { headers: { "user-agent": ua }, signal: controller.signal, redirect: "follow" });
+      const apiBase = (options.apiBase ?? "https://api.github.com").replace(/\/$/, "");
+      const archiveUrl = options.installationToken ? `${apiBase}/repos/${owner}/${repo}/tarball/${sha}` : `${archiveBase}/${owner}/${repo}/tar.gz/${sha}`;
+      const res = await fetchFn(archiveUrl, { headers: { "user-agent": ua, ...(options.installationToken ? { authorization: `Bearer ${options.installationToken}` } : {}) }, signal: controller.signal, redirect: "follow" });
       if (res.status !== 200) return { ok: false, error: { code: "download-failed", message: `GitHub answered HTTP ${res.status} for the archive.` } };
       gz = await readLimited(res, limits.maxDownloadBytes);
     } catch (e) {

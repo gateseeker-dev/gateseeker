@@ -38,10 +38,11 @@ export function Privacy() {
         <Section title="What we keep">
           <Dl
             rows={[
-              ["Your account", "Your GitHub user id, login, name, avatar address and the email address GitHub shares, kept by our sign-in provider (Supabase Auth) while the account exists. We never receive your GitHub password, and we ask GitHub for no access to your repositories."],
+              ["Your account", "Your GitHub user id, login, name, avatar address and the email address GitHub shares, kept by our sign-in provider (Supabase Auth) while the account exists. We never receive your GitHub password. Signing in gives us no access to your repositories; private repositories are read only through the separate authorization below."],
+              ["GitHub App authorizations", "When you allow Gateseeker to read private repositories, GitHub records an installation of our App on your account or organization, read-only and limited to the repositories you pick there. We keep the installation's number and whose it is, so we can ask GitHub for a one-hour token when you analyze or follow one of those repositories. The token is used for that analysis and never stored. Disconnect in Settings, or uninstall the App on GitHub, at any time; deleting your account removes our record."],
               ["Saved reports", "The result of each analysis you run: repository name, commit, findings and the code lines they point to (secret values are always masked). Public repositories only. Deleted after 30 days."],
               ["Analysis history", "One line per analysis (repository, commit, verdict, counts by priority), so the dashboard works on any device. Deleted after 180 days."],
-              ["Followed repositories", "Which public repositories you follow, the date of the last check and a short summary of new findings waiting for the next email. Kept until you unfollow, unsubscribe from an email, or delete your account."],
+              ["Followed repositories", "Which repositories you follow, the date of the last check and a short summary of new findings waiting for the next email. Kept until you unfollow, unsubscribe from an email, or delete your account."],
               ["Usage limits", "How many analyses your account ran in the current hour, to keep the free service fair."],
               ["Access dates", "When your account first used the service and when it last did, with a precision of five minutes. No IP address, browser or page is recorded. The product's operator sees these dates and your account's activity (which public repositories you analyzed and follow, and the reports you shared) to run the service, answer you and prevent abuse; never the findings of your reports."],
               ["Aggregate counters", "Daily totals such as visits to the sign-in page, sign-ins, checks of followed repositories, emails sent and unsubscribes. They hold no user, IP address or browser information."],
@@ -65,7 +66,7 @@ export function Privacy() {
             rows={[
               ["Vercel", "Hosts the website and the functions that run analyses. Its request logs, which include IP addresses, are kept for a short period under Vercel's policy."],
               ["Supabase", "Sign-in and the database described above."],
-              ["GitHub", "Sign-in with your GitHub account, and the source of the public repositories you analyze."],
+              ["GitHub", "Sign-in with your GitHub account, the source of the repositories you analyze, and the App installations that let us read the private ones you authorized."],
               ["Brevo", "Sends the alert emails: receives your email address, the repository name and the short list of new findings for that email. Brevo keeps delivery logs under its own policy."],
               ["OSV.dev", "Receives package names and versions from the analyzed repository to look up known vulnerabilities. No personal data."],
             ]}
@@ -108,7 +109,7 @@ export function Terms() {
         </Section>
 
         <Section title="The service">
-          <p>Gateseeker reads the files of a public GitHub repository, checks the installed dependencies against public vulnerability sources and a curated advisory feed, looks for common insecure patterns, and ranks the findings with published rules. It never installs or runs the code it analyzes.</p>
+          <p>Gateseeker reads the files of a GitHub repository (public, or private ones you authorized through our GitHub App), checks the installed dependencies against public vulnerability sources and a curated advisory feed, looks for common insecure patterns, and ranks the findings with published rules. It never installs or runs the code it analyzes. Only analyze repositories you are allowed to read.</p>
           <p>The service is currently free, offered as a demo, with limits on analyses per hour, repository size and followed repositories. We may change features or limits, or stop the service, at any time; when we stop it we will give signed-in users notice where we reasonably can and time to keep what they need.</p>
         </Section>
 

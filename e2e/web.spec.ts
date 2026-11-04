@@ -220,7 +220,9 @@ test.describe("public page", () => {
   test("explains a missing or private repository and an oversized one", async ({ page }) => {
     await signIn(page);
     await analyze(page, "https://github.com/acme/private");
-    await expect(page.getByRole("alert")).toContainText("not found on GitHub, or it is private");
+    // The stub runs with the GitHub App configured: a repository that cannot be read offers the authorization.
+    await expect(page.getByRole("alert")).toContainText("is private, or does not exist");
+    await expect(page.getByTestId("allow-access")).toBeVisible();
     await analyze(page, "https://github.com/acme/huge");
     await expect(page.getByRole("alert")).toContainText("Run the CLI locally");
   });
@@ -484,6 +486,34 @@ test.describe("public page", () => {
     await expect(page.getByRole("navigation", { name: "Workspace" }).getByRole("link", { name: "Scans" })).toBeVisible();
     // The service answers nobody else.
     expect((await page.request.get("/api/admin/overview", { headers: { authorization: "Bearer not-admin" } })).status()).toBe(401);
+  });
+
+  test("private repository: authorizes the App on GitHub, the analysis resumes, Settings lists and disconnects", async ({ page }) => {
+    await signIn(page);
+    await analyze(page, "https://github.com/acme/secret");
+    const refusal = page.getByRole("alert");
+    await expect(refusal).toContainText("This repository is private");
+    await expect(refusal).toContainText("allow Gateseeker to read it on GitHub");
+    // GitHub's screen (the stub) sends the browser back with the installation; the page binds it and resumes the analysis.
+    await page.getByTestId("allow-access").click();
+    await expect(page.getByTestId("github-setup-done")).toContainText("Connected to @acme");
+    await expect(page).toHaveURL(/\/r\/mem-/, { timeout: 30_000 });
+    await expect(page.getByTestId("private-badge")).toBeVisible();
+    await expect(page.getByTestId("headline")).toBeVisible();
+    // The report is the account's; nothing about the token reached the page.
+    expect(await page.content()).not.toContain("ghs_");
+    // Settings: the installation, how many repositories it covers, the link to GitHub, and Disconnect.
+    await page.goto("/app/settings");
+    const access = page.getByTestId("github-access");
+    await expect(access).toContainText("@acme");
+    await expect(access).toContainText("1 repository");
+    await expect(access.getByRole("link", { name: /Manage on GitHub/ })).toHaveAttribute("href", "http://127.0.0.1:4322/organizations/acme/settings/installations/77");
+    await access.getByRole("button", { name: "Disconnect @acme" }).click();
+    await expect(page.getByTestId("github-access-empty")).toBeVisible();
+    // Disconnected: the same repository asks for the authorization again.
+    await page.goto("/app");
+    await analyze(page, "https://github.com/acme/secret");
+    await expect(page.getByTestId("allow-access")).toBeVisible();
   });
 
   test("a session the service rejects ends locally and the login page opens with the way back", async ({ page }) => {

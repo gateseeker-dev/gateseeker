@@ -8,10 +8,11 @@ import type { Report } from "../types.js";
 import { GATESEEKER_VERSION } from "../version.js";
 import { parseGitHubRepoUrl } from "./github-url.js";
 import { bearerToken, type AuthUser, type AuthVerifier } from "./auth.js";
+import { getInstallation, installationRepositories, installationSettingsUrl, installationToken, installUrl, signState, verifyState, type GitHubAppConfig } from "./github-app.js";
 import { resolveGitHubRepository, scanGitHubRepository, type ServiceErrorCode, type ServiceOptions, type ServiceSuccess } from "./service.js";
 import { alertEmail, alertItem, followConfirmationEmail, mergeAlert, pausedEmail, verifyUnsubscribe, type AlertItem, type EmailContext, type PendingAlert } from "./emails.js";
 import type { EmailDirectory, EmailMessage, Mailer } from "./mail.js";
-import { CLIENT_EVENT_KINDS, StoreError, TOUCH_INTERVAL_MS, type AccountRecord, type AdminOverview, type EventCount, type EventKind, type FollowRecord, type QuotaDecision, type ReportStore, type SharedReportSummary } from "./store.js";
+import { CLIENT_EVENT_KINDS, StoreError, TOUCH_INTERVAL_MS, type AccountRecord, type AdminOverview, type EventCount, type EventKind, type FollowRecord, type InstallationRecord, type QuotaDecision, type ReportStore, type SharedReportSummary } from "./store.js";
 
 /**
  * Framework-agnostic HTTP handlers for the hosted service, shared by the
@@ -46,12 +47,18 @@ export type HandlerErrorCode = ServiceErrorCode | "bad-request" | "unauthorized"
 
 export interface ScanResponseError {
   ok: false;
-  error: { code: HandlerErrorCode; message: string; quota?: QuotaDecision };
+  error: {
+    code: HandlerErrorCode;
+    message: string;
+    quota?: QuotaDecision;
+    /** With code "private" when the GitHub App is configured: where to authorize Gateseeker for this repository (docs/SPRINT_8.md). */
+    installUrl?: string;
+  };
 }
 
 export interface HttpResponse {
   status: number;
-  body: ScanResponseOk | ScanResponseError | ReportResponseOk | CleanupResponse | EventResponse | ScansResponse | FollowsResponse | MonitorResponse | FeedPublishedResponse | UnsubscribeResponse | ShareResponse | FunnelResponse | AdminOverviewResponse | AdminAccountsResponse | AdminAccountResponse;
+  body: ScanResponseOk | ScanResponseError | ReportResponseOk | CleanupResponse | EventResponse | ScansResponse | FollowsResponse | MonitorResponse | FeedPublishedResponse | UnsubscribeResponse | ShareResponse | FunnelResponse | AdminOverviewResponse | AdminAccountsResponse | AdminAccountResponse | InstallUrlResponse | InstallationsResponse | InstallationBoundResponse | InstallationRemovedResponse;
 }
 
 export interface AdminOverviewResponse {
@@ -73,6 +80,45 @@ export interface AdminAccountResponse {
   scans: ScanHistoryEntry[];
   follows: FollowView[];
   shared: SharedReportSummary[];
+  /** GitHub App installations the account bound (whose, since when); absent in answers before Sprint 8. */
+  installations?: InstallationView[];
+}
+
+/** An installation as the page sees it: never the token, never the key. */
+export interface InstallationView {
+  installationId: number;
+  accountLogin: string;
+  accountType: "User" | "Organization";
+  since: string;
+  /** The installation's page on GitHub: choose repositories, uninstall. */
+  manageUrl: string;
+  /** Repositories it covers, asked GitHub on the spot; null when GitHub did not answer. */
+  repositories: number | null;
+}
+
+export interface InstallUrlResponse {
+  ok: true;
+  url: string;
+  repo: string;
+}
+
+export interface InstallationsResponse {
+  ok: true;
+  installations: InstallationView[];
+}
+
+export interface InstallationBoundResponse {
+  ok: true;
+  installation: InstallationView;
+  /** "owner/name" the person was trying to analyze when they went to GitHub, or null. */
+  repo: string | null;
+}
+
+export interface InstallationRemovedResponse {
+  ok: true;
+  removed: boolean;
+  /** Where the App itself is uninstalled (the service only forgot the binding). */
+  manageUrl: string;
 }
 
 export interface ShareResponse {
@@ -141,6 +187,8 @@ export interface HandlerOptions extends Omit<ServiceOptions, "url"> {
   exampleRepo?: string;
   /** GitHub logins allowed to read the product counters (GATESEEKER_ADMIN_LOGINS). */
   adminLogins?: string[];
+  /** The GitHub App that reads private repositories (docs/SPRINT_8.md); absent: public repositories only. */
+  githubApp?: GitHubAppConfig;
 }
 
 export interface MailSettings {
@@ -252,11 +300,25 @@ export async function handleScanRequest(body: unknown, options: HandlerOptions, 
   }
 
   // Resolve the commit first (two cheap API calls, no download): a recent report for the same commit is reused without spending quota.
-  const resolved = await resolveGitHubRepository({ ...options, url });
+  let resolved = await resolveGitHubRepository({ ...options, url });
+  // Private, or not visible without credentials: with the GitHub App, the account's installation for that owner may cover it.
+  let installationTokenValue: string | undefined;
+  if (!resolved.ok && PAUSING.has(resolved.error.code) && options.githubApp) {
+    const target = parseGitHubRepoUrl(url);
+    if (target.ok) {
+      const access = await privateAccess(options, store, who.id, target.value.owner, target.value.repo);
+      if (access.kind === "failed") return fail("upstream-error", access.message);
+      if (access.kind === "none") return privateRefusal(options, who, target.value.owner, target.value.repo);
+      installationTokenValue = access.token;
+      resolved = await resolveGitHubRepository({ ...options, url, installationToken: access.token });
+      if (!resolved.ok && PAUSING.has(resolved.error.code)) return privateRefusal(options, who, target.value.owner, target.value.repo);
+    }
+  }
   if (!resolved.ok) return { status: STATUS[resolved.error.code], body: { ok: false, error: resolved.error } };
   const repository = resolved.value;
   try {
-    const cacheMs = options.cacheMs ?? DEFAULT_CACHE_MS;
+    // A private repository's report is never reused across accounts: no cache lookup for it.
+    const cacheMs = installationTokenValue ? 0 : (options.cacheMs ?? DEFAULT_CACHE_MS);
     const hit = cacheMs > 0 ? await store.findRecent(repository.owner, repository.repo, repository.sha, cacheMs) : null;
     if (hit && (await reusable(hit.body as SavedScan, options))) {
       const id = await store.save({ userId: who.id, owner: repository.owner, repo: repository.repo, ref: repository.ref, sha: repository.sha, cachedFrom: hit.id, body: hit.body, expiresAt: expiresAt() });
@@ -277,7 +339,7 @@ export async function handleScanRequest(body: unknown, options: HandlerOptions, 
   }
   if (!quota.allowed) return fail("rate-limited", `You have used ${String(quota.used)} of ${String(quota.limit)} analyses in this window. It resets at ${quota.resetAt}.`, quota);
 
-  const result = await scanGitHubRepository({ ...options, url, resolved: repository });
+  const result = await scanGitHubRepository({ ...options, url, resolved: repository, ...(installationTokenValue ? { installationToken: installationTokenValue } : {}) });
   if (!result.ok) return { status: STATUS[result.error.code], body: { ok: false, error: result.error } };
   const { archive, timings, report } = result.value;
   const fresh: SavedScan = { ok: true, repository: result.value.repository, archive, timings, report: toPublicReport(report) };
@@ -285,6 +347,109 @@ export async function handleScanRequest(body: unknown, options: HandlerOptions, 
     const id = await store.save({ userId: who.id, owner: repository.owner, repo: repository.repo, ref: repository.ref, sha: repository.sha, cachedFrom: null, body: fresh, expiresAt: expiresAt() });
     await recordHistory(store, who.id, fresh, id);
     return { status: 200, body: { ...fresh, id, cached: false, quota } };
+  } catch (e) {
+    return storeFailure(e);
+  }
+}
+
+// --- private repositories through the GitHub App (docs/SPRINT_8.md) ----------
+
+type PrivateAccess = { kind: "token"; token: string } | { kind: "none" } | { kind: "failed"; message: string };
+
+/**
+ * The account's installation for the repository's owner, and a one-hour
+ * token restricted to that repository. "none" when the account bound no
+ * installation for that owner or the installation does not cover the
+ * repository: the caller then offers the install link.
+ */
+async function privateAccess(options: HandlerOptions, store: ReportStore, userId: string, owner: string, repo: string): Promise<PrivateAccess> {
+  const app = options.githubApp;
+  if (!app) return { kind: "none" };
+  let mine: InstallationRecord[];
+  try {
+    mine = await store.listInstallations(userId);
+  } catch {
+    return { kind: "failed", message: "The report store is unavailable. Try again in a minute." };
+  }
+  const installation = mine.find((i) => i.accountLogin.toLowerCase() === owner.toLowerCase());
+  if (!installation) return { kind: "none" };
+  const t = await installationToken(app, installation.installationId, repo);
+  if (t.ok) return { kind: "token", token: t.value.token };
+  if ("noAccess" in t) return { kind: "none" };
+  return { kind: "failed", message: t.message };
+}
+
+/** 403 "private" with the install link when the App is configured, so the page can offer the authorization. */
+function privateRefusal(options: HandlerOptions, who: AuthUser, owner: string, repo: string): HttpResponse {
+  const app = options.githubApp;
+  const message = app
+    ? `${owner}/${repo} is private, or does not exist. If it is yours, allow Gateseeker to read it on GitHub: the authorization is read-only and only for the repositories you pick.`
+    : `${owner}/${repo} is private, or does not exist. This server analyzes public repositories only.`;
+  const out = fail("private", message);
+  if (app && !out.body.ok) out.body.error.installUrl = installUrl(app, signState(app, who.id, `${owner}/${repo}`));
+  return out;
+}
+
+const installationIdSchema = z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+const bindSchema = z.object({ installationId: installationIdSchema, state: z.string().max(1024) });
+
+async function installationView(app: GitHubAppConfig, r: InstallationRecord, withCount: boolean): Promise<InstallationView> {
+  const account = { installationId: r.installationId, accountLogin: r.accountLogin, accountType: r.accountType };
+  let repositories: number | null = null;
+  if (withCount) {
+    const repos = await installationRepositories(app, r.installationId);
+    if (repos.ok) repositories = repos.value.total;
+  }
+  return { ...account, since: r.createdAt, manageUrl: installationSettingsUrl(app, account), repositories };
+}
+
+/**
+ * /api/github/install?repo=owner/name (GET): the GitHub screen to authorize
+ * the App for that repository, with a signed state. /api/github/installations:
+ * GET lists the account's bound installations; POST {installationId, state}
+ * binds the one GitHub sent the person back with; DELETE /<id> forgets it.
+ */
+export async function handleGitHubRequest(method: string, subpath: string, query: URLSearchParams, body: unknown, options: HandlerOptions, authorization?: string | null): Promise<HttpResponse> {
+  const store = options.store;
+  const app = options.githubApp;
+  if (!store || !app) return fail("not-found", "Private repositories are not available on this server.");
+  const who = await authenticate(options, authorization);
+  if (isResponse(who)) return who;
+  try {
+    if (subpath === "install" && method === "GET") {
+      const target = parseGitHubRepoUrl(`https://github.com/${query.get("repo") ?? ""}`);
+      if (!target.ok) return fail("bad-request", "Say which repository, as owner/name.");
+      const repo = `${target.value.owner}/${target.value.repo}`;
+      await count(store, "github_install_start");
+      return { status: 200, body: { ok: true, url: installUrl(app, signState(app, who.id, repo)), repo } };
+    }
+    if (subpath === "installations" && method === "GET") {
+      const mine = await store.listInstallations(who.id);
+      return { status: 200, body: { ok: true, installations: await Promise.all(mine.slice(0, 20).map((r) => installationView(app, r, true))) } };
+    }
+    if (subpath === "installations" && method === "POST") {
+      const parsed = bindSchema.safeParse(body);
+      if (!parsed.success) return fail("bad-request", "Send installationId and state.");
+      const state = verifyState(app, parsed.data.state, who.id);
+      if (!state.ok) return { status: 403, body: { ok: false, error: { code: "unauthorized", message: "This authorization link is not valid for your account, expired, or was already used. Start again from the repository." } } };
+      const inst = await getInstallation(app, parsed.data.installationId);
+      if (!inst.ok) return fail("upstream-error", inst.message);
+      await store.addInstallation({ userId: who.id, installationId: inst.value.installationId, accountLogin: inst.value.accountLogin, accountType: inst.value.accountType });
+      await count(store, "github_install_done");
+      const record = (await store.listInstallations(who.id)).find((r) => r.installationId === inst.value.installationId);
+      const view = await installationView(app, record ?? { userId: who.id, ...inst.value, createdAt: (options.now ?? (() => new Date()))().toISOString() }, false);
+      return { status: 200, body: { ok: true, installation: view, repo: state.repo || null } };
+    }
+    const m = /^installations\/(\d{1,16})$/.exec(subpath);
+    if (m && method === "DELETE") {
+      const id = installationIdSchema.safeParse(m[1]);
+      if (!id.success) return fail("not-found", "No such installation.");
+      const record = (await store.listInstallations(who.id)).find((r) => r.installationId === id.data);
+      const removed = await store.removeInstallation(who.id, id.data);
+      const manageUrl = record ? installationSettingsUrl(app, { installationId: record.installationId, accountLogin: record.accountLogin, accountType: record.accountType }) : `${(app.webBase ?? "https://github.com").replace(/\/$/, "")}/settings/installations`;
+      return { status: 200, body: { ok: true, removed, manageUrl } };
+    }
+    return fail("not-found", "No such route.");
   } catch (e) {
     return storeFailure(e);
   }
@@ -753,10 +918,23 @@ async function deliverAlert(options: HandlerOptions, store: ReportStore, f: Foll
 
 async function monitorOne(f: FollowRecord, options: HandlerOptions, store: ReportStore, at: string): Promise<"ok" | "new-urgent" | "incomplete" | "failed" | "paused"> {
   const url = `https://github.com/${f.owner}/${f.repo}`;
-  const resolved = await resolveGitHubRepository({ ...options, url });
+  let resolved = await resolveGitHubRepository({ ...options, url });
+  // A private repository the account authorized through the GitHub App is rescanned with a fresh installation token.
+  let token: string | undefined;
+  if (!resolved.ok && PAUSING.has(resolved.error.code) && options.githubApp) {
+    const access = await privateAccess(options, store, f.userId, f.owner, f.repo);
+    if (access.kind === "failed") {
+      await store.updateFollow(f.id, { failures: f.failures + 1, lastScanAt: at, queuedAt: null });
+      return "failed";
+    }
+    if (access.kind === "token") {
+      token = access.token;
+      resolved = await resolveGitHubRepository({ ...options, url, installationToken: token });
+    }
+  }
   if (!resolved.ok) {
     if (PAUSING.has(resolved.error.code)) {
-      const pausedReason = resolved.error.code === "private" ? "The repository is private now." : "The repository was not found on GitHub.";
+      const pausedReason = options.githubApp ? "Access to the repository was revoked on GitHub, or it was deleted. Authorize Gateseeker again from an analysis to resume." : resolved.error.code === "private" ? "The repository is private now." : "The repository was not found on GitHub.";
       await store.updateFollow(f.id, { pausedReason, lastScanAt: at, queuedAt: null, pendingAlert: null });
       // Paused follows are never rescanned again, so this notice goes once.
       await sendEmail(options, store, f, (c) => pausedEmail(c, pausedReason));
@@ -766,7 +944,7 @@ async function monitorOne(f: FollowRecord, options: HandlerOptions, store: Repor
     return "failed";
   }
   const repository = resolved.value;
-  const cacheMs = options.cacheMs ?? DEFAULT_CACHE_MS;
+  const cacheMs = token ? 0 : (options.cacheMs ?? DEFAULT_CACHE_MS);
   const hit = cacheMs > 0 ? await store.findRecent(repository.owner, repository.repo, repository.sha, cacheMs) : null;
   let saved: SavedScan;
   let cachedFrom: string | null = null;
@@ -774,7 +952,7 @@ async function monitorOne(f: FollowRecord, options: HandlerOptions, store: Repor
     saved = hit.body as SavedScan;
     cachedFrom = hit.id;
   } else {
-    const result = await scanGitHubRepository({ ...options, url, resolved: repository });
+    const result = await scanGitHubRepository({ ...options, url, resolved: repository, ...(token ? { installationToken: token } : {}) });
     if (!result.ok) {
       await store.updateFollow(f.id, { failures: f.failures + 1, lastScanAt: at, queuedAt: null });
       return "failed";
@@ -980,7 +1158,8 @@ export async function handleAdminRequest(subpath: string, query: URLSearchParams
       const id = m[1] ?? "";
       const account = await store.getAccount(id);
       if (!account) return fail("not-found", "No account with this id.");
-      const [scans, follows, shared] = await Promise.all([store.listScans(id, 100), store.listFollows(id), store.listSharedReports(id)]);
+      const [scans, follows, shared, installations] = await Promise.all([store.listScans(id, 100), store.listFollows(id), store.listSharedReports(id), store.listInstallations(id)]);
+      const app = options.githubApp;
       return {
         status: 200,
         body: {
@@ -989,6 +1168,7 @@ export async function handleAdminRequest(subpath: string, query: URLSearchParams
           scans: scans.map((r) => ({ owner: r.owner, repo: r.repo, sha: r.sha, verdict: r.verdict, byPriority: r.byPriority, reportId: r.reportId, at: r.createdAt })),
           follows: follows.map(followView),
           shared,
+          ...(app ? { installations: await Promise.all(installations.map((r) => installationView(app, r, false))) } : {}),
         },
       };
     }

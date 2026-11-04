@@ -16,6 +16,26 @@ export interface ScanNote {
 
 const NOTE = "gateseeker:scan-note:";
 const BACK = "gateseeker:analyze-back";
+const PENDING = "gateseeker:analyze-pending";
+
+/** The repository URL to analyze again after the GitHub authorization (docs/SPRINT_8.md 3.4); this browser only. */
+export function rememberPendingAnalysis(url: string): void {
+  try {
+    sessionStorage.setItem(PENDING, url);
+  } catch {
+    /* the person pastes the URL again */
+  }
+}
+
+export function takePendingAnalysis(): string | null {
+  try {
+    const v = sessionStorage.getItem(PENDING);
+    sessionStorage.removeItem(PENDING);
+    return v && /^https:\/\/github\.com\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+/.test(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
 
 export function leaveScanNote(id: string, note: ScanNote): void {
   try {

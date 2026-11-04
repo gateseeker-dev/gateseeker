@@ -10,7 +10,7 @@ import { shareReport } from "../api";
  * before it was saved, so the link never exposes a secret, but it does show
  * the repository's findings to anyone who has it.
  */
-export function ShareButton({ id, initial, token }: { id: string; initial: boolean; token: string }) {
+export function ShareButton({ id, initial, token, isPrivate = false }: { id: string; initial: boolean; token: string; isPrivate?: boolean }) {
   const [shared, setShared] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -18,6 +18,8 @@ export function ShareButton({ id, initial, token }: { id: string; initial: boole
   const link = `${window.location.origin}/p/${id}`;
 
   async function toggle() {
+    // A private repository's findings leave the account with this link: say so before it exists.
+    if (!shared && isPrivate && !window.confirm("This repository is private. Anyone with the link will see its findings (file paths, dependency names and versions). Share it?")) return;
     setBusy(true);
     setError(null);
     const out = await shareReport(id, token, !shared);

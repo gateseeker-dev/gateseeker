@@ -61,6 +61,17 @@ export interface AdminOverview {
   scans30: number;
   follows: number;
   sharedReports: number;
+  /** GitHub App installations bound to accounts (Sprint 8); 0 before that migration. */
+  installations: number;
+}
+
+/** A GitHub App installation an account bound (docs/SPRINT_8.md): the number and whose it is, nothing that grants access by itself. */
+export interface InstallationRecord {
+  userId: string;
+  installationId: number;
+  accountLogin: string;
+  accountType: "User" | "Organization";
+  createdAt: string;
 }
 
 export interface SharedReportSummary {
@@ -122,7 +133,7 @@ export type FollowResult = { ok: true; created: boolean; follow: FollowRecord } 
 
 /** Aggregate page events (login funnel): counted per UTC day, no user, IP or user agent. */
 /** Kinds the page may send to POST /api/event. */
-export const CLIENT_EVENT_KINDS = ["login_view", "login_start", "signin_complete", "email_click", "example_view", "public_report_view", "update_banner_shown", "update_banner_reload"] as const;
+export const CLIENT_EVENT_KINDS = ["login_view", "login_start", "signin_complete", "email_click", "example_view", "public_report_view", "update_banner_shown", "update_banner_reload", "github_install_start", "github_install_done"] as const;
 /** All kinds, including the ones only the service counts (monitor and emails, docs/SPRINT_6.md 3.7). */
 export const EVENT_KINDS = [...CLIENT_EVENT_KINDS, "rescan_complete", "rescan_incomplete", "rescan_failed", "email_follow_confirm", "email_alert", "email_paused", "email_capped", "email_failed", "unsubscribe"] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
@@ -181,6 +192,11 @@ export interface ReportStore {
   getAccount(userId: string): Promise<AccountRecord | null>;
   /** Reports of one account that it shared; metadata only. */
   listSharedReports(userId: string): Promise<SharedReportSummary[]>;
+  /** Binds an installation to an account (idempotent); the login and type are refreshed. */
+  addInstallation(record: Omit<InstallationRecord, "createdAt">): Promise<void>;
+  listInstallations(userId: string): Promise<InstallationRecord[]>;
+  /** Unbinds an installation from an account; true when there was one. The App stays installed on GitHub. */
+  removeInstallation(userId: string, installationId: number): Promise<boolean>;
 }
 
 export const TOUCH_INTERVAL_MS = 5 * 60 * 1000;
@@ -212,6 +228,7 @@ export function createMemoryStore(clock: StoreClock = {}): ReportStore & { event
     follows: follows.filter((f) => f.userId === userId && f.pausedReason === null).length,
   });
   const feeds: SignedFeed[] = [];
+  const installations: InstallationRecord[] = [];
   const emailDays = new Map<string, number>();
   const quota = new Map<string, { windowStart: number; used: number }>();
   const events = new Map<string, number>();
@@ -364,6 +381,7 @@ export function createMemoryStore(clock: StoreClock = {}): ReportStore & { event
       for (const [id, r] of reports) if (r.userId === userId) reports.delete(id);
       for (let i = scans.length - 1; i >= 0; i--) if (scans[i]?.userId === userId) scans.splice(i, 1);
       for (let i = follows.length - 1; i >= 0; i--) if (follows[i]?.userId === userId) follows.splice(i, 1);
+      for (let i = installations.length - 1; i >= 0; i--) if (installations[i]?.userId === userId) installations.splice(i, 1);
       quota.delete(userId);
       accounts.delete(userId);
     },
@@ -390,6 +408,7 @@ export function createMemoryStore(clock: StoreClock = {}): ReportStore & { event
         scans30: scans.filter((x) => Date.parse(x.createdAt) >= d30).length,
         follows: follows.filter((f) => f.pausedReason === null).length,
         sharedReports: [...reports.values()].filter((r) => r.isPublic).length,
+        installations: installations.length,
       };
     },
     // eslint-disable-next-line @typescript-eslint/require-await
@@ -443,6 +462,23 @@ export function createMemoryStore(clock: StoreClock = {}): ReportStore & { event
     async countFollows() {
       return follows.filter((f) => f.pausedReason === null).length;
     },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async addInstallation(record) {
+      const existing = installations.find((x) => x.userId === record.userId && x.installationId === record.installationId);
+      if (existing) Object.assign(existing, { accountLogin: record.accountLogin, accountType: record.accountType });
+      else installations.push({ ...record, createdAt: now().toISOString() });
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async listInstallations(userId) {
+      return installations.filter((x) => x.userId === userId).map((x) => ({ ...x }));
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async removeInstallation(userId, installationId) {
+      const i = installations.findIndex((x) => x.userId === userId && x.installationId === installationId);
+      if (i < 0) return false;
+      installations.splice(i, 1);
+      return true;
+    },
     /** "YYYY-MM-DD:kind" -> count, for tests and the local server. */
     eventCounts() {
       return Object.fromEntries(events);
@@ -475,7 +511,8 @@ const rowSchema = z.looseObject({
 
 const eventRowSchema = z.looseObject({ day: z.string(), kind: z.string(), count: z.number() });
 const accountRowSchema = z.looseObject({ user_id: z.string(), login: z.string(), first_seen: z.string(), last_seen: z.string(), scans: z.number(), follows: z.number() });
-const overviewSchema = z.looseObject({ accounts: z.number(), active_7: z.number(), active_30: z.number(), new_7: z.number(), new_30: z.number(), scans_7: z.number(), scans_30: z.number(), follows: z.number(), shared_reports: z.number() });
+const overviewSchema = z.looseObject({ accounts: z.number(), active_7: z.number(), active_30: z.number(), new_7: z.number(), new_30: z.number(), scans_7: z.number(), scans_30: z.number(), follows: z.number(), shared_reports: z.number(), installations: z.number().optional() });
+const installationRowSchema = z.looseObject({ user_id: z.string(), installation_id: z.number().int(), account_login: z.string(), account_type: z.enum(["User", "Organization"]), created_at: z.string() });
 
 const scanRowSchema = z.looseObject({
   id: z.string(),
@@ -706,7 +743,7 @@ export function createSupabaseStore(options: SupabaseStoreOptions): ReportStore 
       // Every table references auth.users with "on delete cascade", so deleting the user removes its rows. They are
       // deleted first anyway, so a failure part-way leaves less behind, never more; the waitlist only unlinks on cascade.
       const mine = new URLSearchParams({ user_id: `eq.${userId}` }).toString();
-      for (const table of ["follows", "scans", "reports", "scan_quota", "waitlist", "accounts"]) await call(`/rest/v1/${table}?${mine}`, { method: "DELETE" });
+      for (const table of ["follows", "scans", "reports", "scan_quota", "waitlist", "accounts", "installations"]) await call(`/rest/v1/${table}?${mine}`, { method: "DELETE" });
       await call(`/auth/v1/admin/users/${userId}`, { method: "DELETE" });
     },
     async touchAccount(userId, login) {
@@ -717,7 +754,7 @@ export function createSupabaseStore(options: SupabaseStoreOptions): ReportStore 
       const parsed = overviewSchema.safeParse(out);
       if (!parsed.success) throw new StoreError("admin_overview returned an unexpected shape", 200);
       const d = parsed.data;
-      return { accounts: d.accounts, active7: d.active_7, active30: d.active_30, new7: d.new_7, new30: d.new_30, scans7: d.scans_7, scans30: d.scans_30, follows: d.follows, sharedReports: d.shared_reports };
+      return { accounts: d.accounts, active7: d.active_7, active30: d.active_30, new7: d.new_7, new30: d.new_30, scans7: d.scans_7, scans30: d.scans_30, follows: d.follows, sharedReports: d.shared_reports, installations: d.installations ?? 0 };
     },
     async listAccounts(limit, before) {
       const out = await call("/rest/v1/rpc/admin_accounts", { method: "POST", body: JSON.stringify({ p_limit: Math.min(Math.max(limit, 1), 200), p_before: before }) });
@@ -747,6 +784,24 @@ export function createSupabaseStore(options: SupabaseStoreOptions): ReportStore 
       const parsed = z.array(z.looseObject({ id: z.string(), owner: z.string(), repo: z.string(), sha: z.string(), created_at: z.string() })).safeParse(out);
       if (!parsed.success) throw new StoreError("reports query returned an unexpected shape", 200);
       return parsed.data.map((r) => ({ id: r.id, owner: r.owner, repo: r.repo, sha: r.sha, createdAt: r.created_at }));
+    },
+    async addInstallation(record) {
+      const row = { user_id: record.userId, installation_id: record.installationId, account_login: record.accountLogin, account_type: record.accountType };
+      await call("/rest/v1/installations?on_conflict=user_id,installation_id", { method: "POST", body: JSON.stringify(row), prefer: "resolution=merge-duplicates" });
+    },
+    async listInstallations(userId) {
+      if (!ID.test(userId)) return [];
+      const q = new URLSearchParams({ user_id: `eq.${userId}`, order: "created_at.asc", limit: "100" });
+      const out = await call(`/rest/v1/installations?${q.toString()}`, { method: "GET" });
+      const parsed = z.array(installationRowSchema).safeParse(out);
+      if (!parsed.success) throw new StoreError("installations query returned an unexpected shape", 200);
+      return parsed.data.map((r) => ({ userId: r.user_id, installationId: r.installation_id, accountLogin: r.account_login, accountType: r.account_type, createdAt: r.created_at }));
+    },
+    async removeInstallation(userId, installationId) {
+      if (!ID.test(userId)) return false;
+      const q = new URLSearchParams({ user_id: `eq.${userId}`, installation_id: `eq.${String(installationId)}`, select: "installation_id" });
+      const out = await call(`/rest/v1/installations?${q.toString()}`, { method: "DELETE", prefer: "return=representation" });
+      return Array.isArray(out) && out.length > 0;
     },
   };
 }

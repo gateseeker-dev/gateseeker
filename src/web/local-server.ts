@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { GATESEEKER_VERSION } from "../version.js";
 import { authConfigFromEnv, exampleRepoFromEnv, handlerOptionsFromEnv } from "./env.js";
-import { handleAccountRequest, handleAdminRequest, handleExampleRequest, handleFunnelRequest, handlePublicReportRequest, handleShareRequest, handleCleanupRequest, handleEventRequest, handleFeedPublishedRequest, handleUnsubscribeRequest, handleFollowsRequest, handleMonitorRequest, handleReportRequest, handleScanRequest, handleScansRequest } from "./handler.js";
+import { handleAccountRequest, handleAdminRequest, handleExampleRequest, handleFunnelRequest, handleGitHubRequest, handlePublicReportRequest, handleShareRequest, handleCleanupRequest, handleEventRequest, handleFeedPublishedRequest, handleUnsubscribeRequest, handleFollowsRequest, handleMonitorRequest, handleReportRequest, handleScanRequest, handleScansRequest } from "./handler.js";
 
 /**
  * Development and end-to-end server for the public page: serves web/dist and
@@ -21,6 +21,8 @@ import { handleAccountRequest, handleAdminRequest, handleExampleRequest, handleF
  *   GET  /api/funnel          product counters (GATESEEKER_ADMIN_LOGINS only)
  *   GET  /api/admin/overview, /api/admin/accounts[?before=], /api/admin/accounts/<id>  admin master (same logins)
  *   GET/POST/DELETE /api/follows  followed repositories of the signed-in user
+ *   GET  /api/github/install?repo=owner/name, GET/POST /api/github/installations, DELETE /api/github/installations/<id>
+ *                             the GitHub App authorization for private repositories (docs/SPRINT_8.md)
  *   DELETE /api/account       delete the signed-in account and its data ({confirm: login})
  *   GET  /api/cron/monitor    rescan due followed repositories (bearer CRON_SECRET)
  *   POST /api/feed/published  store a signed advisory set, queue and rescan (GATESEEKER_FEED_KEY)
@@ -110,7 +112,7 @@ const server = createServer((req, res) => {
   const authorization = req.headers.authorization ?? null;
 
   if (url.pathname === "/api/config") {
-    json(res, 200, { ok: true, auth: authConfig, exampleRepo, version: reportedVersion });
+    json(res, 200, { ok: true, auth: authConfig, exampleRepo, version: reportedVersion, githubApp: options.githubApp !== undefined });
     return;
   }
   if (url.pathname === "/api/scan") {
@@ -238,6 +240,20 @@ const server = createServer((req, res) => {
   }
   if (url.pathname === "/api/example") {
     void handleExampleRequest(options).then((out) => { json(res, out.status, out.body); });
+    return;
+  }
+  if (url.pathname.startsWith("/api/github/")) {
+    void (async () => {
+      const raw = req.method === "POST" ? await readBody(req) : null;
+      let body: unknown;
+      try {
+        body = raw === null ? null : (JSON.parse(raw) as unknown);
+      } catch {
+        body = null;
+      }
+      const out = await handleGitHubRequest(req.method ?? "GET", url.pathname.slice("/api/github/".length), url.searchParams, body, options, authorization);
+      json(res, out.status, out.body);
+    })();
     return;
   }
   if (url.pathname.startsWith("/api/admin/")) {

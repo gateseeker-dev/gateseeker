@@ -265,6 +265,7 @@ describe("createSupabaseStore", () => {
       `DELETE https://p.supabase.co/rest/v1/scan_quota?user_id=eq.${ALICE.id}`,
       `DELETE https://p.supabase.co/rest/v1/waitlist?user_id=eq.${ALICE.id}`,
       `DELETE https://p.supabase.co/rest/v1/accounts?user_id=eq.${ALICE.id}`,
+      `DELETE https://p.supabase.co/rest/v1/installations?user_id=eq.${ALICE.id}`,
       `DELETE https://p.supabase.co/auth/v1/admin/users/${ALICE.id}`,
     ]);
     // Not an account id: nothing is sent at all.

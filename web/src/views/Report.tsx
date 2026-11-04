@@ -178,6 +178,7 @@ function Headline({ response, elapsedMs, printing }: { response: ScanResponseOk;
         <Icon className={cn("size-5", tone)} aria-hidden="true" />
         <span className={tone} data-testid="headline">{title}</span>
         <span className="font-mono text-label font-normal text-muted-foreground">{slug}</span>
+        {repository.isPrivate && <Badge variant="kind" title="Read through your GitHub authorization; the report opens only for your account" data-testid="private-badge">private</Badge>}
       </p>
       <p className="text-body" data-testid="gate-line">{gate}</p>
       {verdict === "incomplete" && urgent > 0 && <p className="text-body text-warning">Some checks could not run, so this result is incomplete. See Technical details.</p>}

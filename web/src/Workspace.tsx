@@ -27,9 +27,9 @@ import { useUpdateNotice } from "./update-notice";
  * skeletons so the page does not jump when it arrives.
  */
 
-export type WorkspacePage = "scans" | "scan" | "dashboard" | "resources" | "settings" | "design-system" | "admin" | "admin-accounts" | "admin-account";
+export type WorkspacePage = "scans" | "scan" | "dashboard" | "resources" | "settings" | "design-system" | "admin" | "admin-accounts" | "admin-account" | "github-setup";
 
-const TITLE: Record<WorkspacePage, string> = { scans: "Scans", scan: "Scan", dashboard: "Dashboard", resources: "Resources", settings: "Settings", "design-system": "Design system", admin: "Admin", "admin-accounts": "Accounts", "admin-account": "Account" };
+const TITLE: Record<WorkspacePage, string> = { scans: "Scans", scan: "Scan", dashboard: "Dashboard", resources: "Resources", settings: "Settings", "design-system": "Design system", admin: "Admin", "admin-accounts": "Accounts", "admin-account": "Account", "github-setup": "GitHub access" };
 
 /** The admin pages show the admin sidebar; the switch reflects the page group and navigates, so a reload lands on "User" unless the address is an admin page. */
 const ADMIN_PAGES = new Set<WorkspacePage>(["admin", "admin-accounts", "admin-account"]);
@@ -62,7 +62,7 @@ export function Workspace({ page, loading = false, children }: { page: Workspace
 
   // The analyze view's back button, and the Settings back button, return here.
   useEffect(() => {
-    if (page !== "settings") rememberWorkspacePath(window.location.pathname);
+    if (page !== "settings" && page !== "github-setup") rememberWorkspacePath(window.location.pathname);
   });
 
   // "/" opens the analyze view from anywhere in the workspace, unless the person is typing.

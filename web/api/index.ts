@@ -9,6 +9,7 @@ import {
   handleFeedPublishedRequest,
   handleFollowsRequest,
   handleFunnelRequest,
+  handleGitHubRequest,
   handleMonitorRequest,
   handlePublicReportRequest,
   handleReportRequest,
@@ -67,7 +68,7 @@ async function route(req: Request): Promise<Response> {
 
   if (path === "/api/config") {
     if (method !== "GET") return refuse(405, "GET only.", "GET");
-    return Response.json({ ok: true, auth: authConfigFromEnv(process.env), exampleRepo: exampleRepoFromEnv(process.env), version: GATESEEKER_VERSION }, { headers: { "cache-control": "no-store" } });
+    return Response.json({ ok: true, auth: authConfigFromEnv(process.env), exampleRepo: exampleRepoFromEnv(process.env), version: GATESEEKER_VERSION, githubApp: options.githubApp !== undefined }, { headers: { "cache-control": "no-store" } });
   }
   if (path === "/api/scan") {
     if (method !== "POST") return refuse(405, "POST only.", "POST");
@@ -82,6 +83,12 @@ async function route(req: Request): Promise<Response> {
   if (path === "/api/scans") {
     if (method !== "GET") return refuse(405, "GET only.", "GET");
     return answer(await handleScansRequest(options, authorization));
+  }
+  if (path.startsWith("/api/github/")) {
+    if (method !== "GET" && method !== "POST" && method !== "DELETE") return refuse(405, "GET, POST or DELETE.", "GET, POST, DELETE");
+    const b = method === "POST" ? await jsonBody(req, 2048) : { body: null };
+    if ("tooLarge" in b) return refuse(413, "Body too large.");
+    return answer(await handleGitHubRequest(method, path.slice("/api/github/".length), url.searchParams, b.body, options, authorization));
   }
   if (path.startsWith("/api/admin/")) {
     if (method !== "GET") return refuse(405, "GET only.", "GET");

@@ -20,6 +20,7 @@ import { Advisories, AdvisoryPage } from "./pages/Advisories";
 import { PublicReportPage } from "./pages/PublicReport";
 import { SavedReport } from "./pages/SavedReport";
 import { Scans } from "./pages/Scans";
+import { GitHubSetupPage } from "./pages/GitHubSetup";
 import { SettingsPage } from "./pages/Settings";
 import { Unsubscribe } from "./pages/Unsubscribe";
 import { Link, Router, navigate, usePath } from "./router";
@@ -53,6 +54,7 @@ const TITLES: Record<string, string> = {
   "/app": "Analyze a repository · Gateseeker",
   "/app/design-system": "Design system · Gateseeker",
   "/app/settings": "Settings · Gateseeker",
+  "/app/github/setup": "GitHub access · Gateseeker",
   "/app/dashboard": "Dashboard · Gateseeker",
   "/app/scans": "Scans · Gateseeker",
   "/app/resources": "Resources · Gateseeker",
@@ -124,6 +126,7 @@ function Shell() {
   else if (path === "/app") page = <AnalyzePage />;
   else if (path === "/app/design-system") page = <DesignSystem />;
   else if (path === "/app/settings") page = <SettingsPage />;
+  else if (path === "/app/github/setup") page = <GitHubSetupPage />;
   else if (path === "/app/dashboard") page = <Dashboard />;
   else if (path === "/app/scans") page = <Scans />;
   else if (path === "/app/resources") page = <WorkspaceResources />;
@@ -137,7 +140,7 @@ function Shell() {
   // The analyze view is full screen: its own frame, no sidebar and no site header.
   if (path === "/app") return page;
   const workspacePage: WorkspacePage | null =
-    path === "/app/design-system" ? "design-system" : path === "/app/settings" ? "settings" : path === "/app/dashboard" ? "dashboard" : path === "/app/scans" ? "scans" : path === "/app/resources" ? "resources" : path === "/app/admin" ? "admin" : path === "/app/admin/accounts" ? "admin-accounts" : adminAccountId ? "admin-account" : reportId ? "scan" : null;
+    path === "/app/design-system" ? "design-system" : path === "/app/settings" ? "settings" : path === "/app/github/setup" ? "github-setup" : path === "/app/dashboard" ? "dashboard" : path === "/app/scans" ? "scans" : path === "/app/resources" ? "resources" : path === "/app/admin" ? "admin" : path === "/app/admin/accounts" ? "admin-accounts" : adminAccountId ? "admin-account" : reportId ? "scan" : null;
   if (signedIn && workspacePage) return <Workspace page={workspacePage}>{page}</Workspace>;
   // A public page must not flash for a signed-in visitor: render nothing until the session is known, then redirect (effect above).
   if ((PUBLIC_ROUTES.has(path) || path in WORKSPACE_COUNTERPART) && (auth.status === "loading" || signedIn)) return <div className="min-h-dvh bg-background" />;

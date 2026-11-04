@@ -95,7 +95,7 @@ export function SavedReport({ id }: { id: string }) {
           </p>
           {auth.session && (
             <div className="flex flex-wrap items-center gap-2">
-              <ShareButton id={outcome.id} initial={outcome.isPublic} token={auth.session.accessToken} />
+              <ShareButton id={outcome.id} initial={outcome.isPublic} token={auth.session.accessToken} isPrivate={outcome.saved.repository.isPrivate === true} />
               <FollowButton owner={outcome.saved.repository.owner} repo={outcome.saved.repository.repo} token={auth.session.accessToken} />
             </div>
           )}

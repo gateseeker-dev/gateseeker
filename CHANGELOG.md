@@ -2,6 +2,10 @@
 
 One short section per published version, newest first. The workspace links the current section from its "updated" notice, so write for the person who uses the product, not for the engineer.
 
+## Unreleased
+
+- Private repositories through the site (Sprint 8, `docs/SPRINT_8.md`): paste a private repository, allow Gateseeker to read it on GitHub's own screen (read-only, only the repositories you pick, nothing installed in them), and the analysis resumes. Followed private repositories get the daily check too; revoking the authorization pauses it with the reason. Settings lists the authorizations with Disconnect. The service never stores a credential: one one-hour token per analysis.
+
 ## 1.0.0 (2026-11-04)
 
 First stable version: `npm install gateseeker` now gets this one (`latest`), and the Action is listed on the GitHub Marketplace.

@@ -20,6 +20,7 @@ Estado: projeto Vercel `gateseeker` criado em 2026-10-28 (conta pessoal, plano H
 7. Repita os passos 1 e 2 com `supabase/migrations/20261102000000_feed.sql` (feed publicado sem redeploy, Sprint 6). Conferência: a tabela `feed_sets` aparece com o cadeado de RLS e `follows` ganha as colunas `ecosystems` e `queued_at`. **Aplique antes de configurar a chave do feed (§5 e §5.1)**; sem ela, o serviço continua usando o conjunto embutido no build.
 10. Repita os passos 1 e 2 com `supabase/migrations/20261104100000_accounts.sql` (Sprint 7: contas com último acesso, visão geral do admin e dois contadores novos). Conferência: a tabela `accounts` aparece com o cadeado de RLS e as funções `touch_account`, `admin_overview` e `admin_accounts` existem. **Até esta migração ser aplicada, a área de admin mostra erro e o último acesso não é gravado**; o resto continua funcionando.
 9. Repita os passos 1 e 2 com `supabase/migrations/20261104000000_public_reports.sql` (link público opcional de relatório e dois contadores novos, rodada de crescimento). Conferência: `reports` ganha a coluna `public`. **Até esta migração ser aplicada, o botão "Share a link" mostra um erro e o exemplo da Home e os relatórios compartilhados não são contados**; o resto continua funcionando.
+11. Repita os passos 1 e 2 com `supabase/migrations/20261105000000_installations.sql` (Sprint 8: instalações do GitHub App, visão geral do admin com o total delas e dois contadores novos). Conferência: a tabela `installations` aparece com o cadeado de RLS. **Aplique antes de configurar o GitHub App (§5.3)**; até lá, o produto analisa só repositórios públicos.
 8. Repita os passos 1 e 2 com `supabase/migrations/20261103000000_email.sql` (alertas por e-mail, Sprint 6). Conferência: a tabela `email_quota` aparece com o cadeado de RLS, a função `claim_email` existe e `follows` ganha `pending_alert` e `last_alert_at`. **Aplique antes de configurar as variáveis de e-mail (§5 e §5.2).**
 
 Como ler o funil: Table Editor → `events`. Cada linha é um dia (UTC) e um tipo: `login_view` (página de login aberta por quem não está logado), `login_start` (clique em "Continue with GitHub") e `signin_complete` (voltou do GitHub logado). Abandono no login = 1 − `signin_complete` ÷ `login_view`, somando os dias. A regra da decisão 1 do `docs/ROADMAP.md`: acima de 40% em 2 semanas ou 100 visitas, reabrir análises anônimas com limite.
@@ -57,6 +58,9 @@ Projeto `gateseeker` → Settings → Environment Variables → Add. Para cada l
 | `SUPABASE_ANON_KEY` | anon key | |
 | `SUPABASE_SERVICE_ROLE_KEY` | service_role key | marque "Sensitive" |
 | `CRON_SECRET` | 32+ caracteres aleatórios (o botão "Generate" do próprio Vercel serve) | marque "Sensitive"; os crons diários de limpeza e de monitoramento se autenticam com ele |
+| `GATESEEKER_GITHUB_APP_ID` | o App ID da página do GitHub App (§5.3) | identifica o App que lê repositórios privados. As três variáveis do App precisam existir juntas; sem elas o produto analisa só públicos |
+| `GATESEEKER_GITHUB_APP_SLUG` | o nome do App na URL (`github.com/apps/<slug>`) | monta o link "Allow access on GitHub" |
+| `GATESEEKER_GITHUB_APP_KEY` | a chave privada `.pem` gerada na página do App (§5.3), tipo **Secret** | assina os pedidos ao GitHub; nunca sai do Vercel. Cole o arquivo inteiro, com as linhas BEGIN e END |
 | `GATESEEKER_EXAMPLE_REPO` | opcional: URL de um repositório público do GitHub | o botão "Try an example" da tela de análise usa este repositório; sem a variável, usa `https://github.com/gateseeker-dev/gateseeker`. Um repositório de demonstração com achados reais mostra melhor o produto |
 | `GATESEEKER_SCAN_LIMIT` | `10` | análises por usuário por hora; opcional |
 | `GATESEEKER_FEED_KEY` | 32+ caracteres aleatórios, **o mesmo valor** do segredo do GitHub em §5.1 | marque "Sensitive"; confere a assinatura dos conjuntos de advisories publicados pelo workflow. Sem ela (ou com menos de 32 caracteres), o serviço usa só o conjunto embutido no build |
@@ -88,6 +92,25 @@ Sem o segredo ou a variável, o workflow termina com um aviso e não publica nad
 4. Redeploy. Siga um repositório de teste: o e-mail de confirmação deve chegar em segundos. Abra o cabeçalho do e-mail ("mostrar original") e confira `List-Unsubscribe`: o Brevo coloca o próprio cabeçalho nos e-mails transacionais e a documentação não diz se o nosso o substitui. Se aparecer o do Brevo, o clique em "cancelar inscrição" do provedor de e-mail bloqueia o endereço no Brevo (nenhum e-mail do Gateseeker chega mais a ele) em vez de desligar só aquele repositório; o link no rodapé do e-mail continua sendo o nosso.
 
 Sem `BREVO_API_KEY`, nada é enviado e nada fica guardado: os alertas pendentes são descartados. Localmente (`GATESEEKER_AUTH_STUB=1`) os e-mails ficam em memória, em `GET /api/dev/outbox`.
+
+### 5.3. GitHub App: repositórios privados (Sprint 8)
+
+O App é o que permite analisar repositórios privados pelo site (docs/SPRINT_8.md). Ele pede só leitura, a pessoa escolhe os repositórios na tela do GitHub, e o serviço nunca guarda credencial: a cada análise pede ao GitHub um token de 1 hora restrito àquele repositório.
+
+1. GitHub → sua foto → Settings → Developer settings → GitHub Apps → **New GitHub App**.
+2. GitHub App name: `Gateseeker` (se o nome estiver tomado, `Gateseeker Security Gate`). Homepage URL: `https://gateseeker.vercel.app`.
+3. **Callback URL**: deixe em branco. Desmarque **Request user authorization (OAuth) during installation**; o login continua sendo o do Supabase.
+4. **Setup URL**: `https://gateseeker.vercel.app/app/github/setup`. Marque **Redirect on update**, para que mudar os repositórios de uma instalação também volte ao site.
+5. **Webhook**: desmarque Active (não usamos webhooks nesta sprint).
+6. **Permissions** → Repository permissions: **Contents: Read-only** e **Metadata: Read-only**. Nada mais.
+7. **Where can this GitHub App be installed?**: Any account.
+8. Create GitHub App. Na página do App, anote o **App ID** (número no topo) e o nome na URL (`github.com/apps/<slug>`, o `slug`).
+9. Mesma página, seção Private keys → **Generate a private key**. O navegador baixa um arquivo `.pem`; é a única cópia, guarde-o fora do repositório.
+10. Vercel → projeto → Settings → Environment → Add: `GATESEEKER_GITHUB_APP_ID` (o número), `GATESEEKER_GITHUB_APP_SLUG` (o slug), `GATESEEKER_GITHUB_APP_KEY` (abra o `.pem` num editor de texto e cole o conteúdo inteiro, marcando **Secret**). Ambiente Production. Save.
+11. Deployments → Redeploy. Conferência: `GET https://gateseeker.vercel.app/api/config` responde `"githubApp":true`; na tela de análise, o texto passa a dizer "public or one of yours that is private".
+12. Teste com um repositório privado seu: cole a URL, clique em **Allow access on GitHub**, escolha o repositório, confirme. A análise roda ao voltar. Em Settings aparece a seção GitHub access.
+
+Se a chave vazar: na página do App, gere uma nova (Generate a private key), apague a antiga (Delete) e troque a variável no Vercel; nada mais precisa mudar. Se `api/config` disser `"githubApp":false` com as variáveis no lugar, os logs do deploy mostram a linha "private repositories are off" com o motivo (chave colada incompleta é o mais comum).
 
 ## 6. Vercel: proteção
 

@@ -102,7 +102,7 @@ export function AdminOverviewPage() {
           { label: "Accounts", value: o.accounts, note: `${String(o.new7)} new in 7 days, ${String(o.new30)} in 30` },
           { label: "Active in 7 days", value: o.active7, note: `${String(o.active30)} in 30 days` },
           { label: "Analyses in 7 days", value: o.scans7, note: `${String(o.scans30)} in 30 days` },
-          { label: "Followed repositories", value: o.follows, note: `${String(o.sharedReports)} shared reports` },
+          { label: "Followed repositories", value: o.follows, note: `${String(o.sharedReports)} shared reports, ${String(o.installations)} GitHub installations` },
         ].map((m) => (
           <div key={m.label}>
             <dt className="sr-only">{m.label}</dt>
@@ -261,6 +261,25 @@ export function AdminAccountPage({ id }: { id: string }) {
           </ul>
         )}
       </section>
+      {data.installations && (
+        <section className="grid gap-2">
+          <h2 className="text-title font-medium">GitHub installations</h2>
+          {data.installations.length === 0 ? (
+            <p className="text-label text-muted-foreground">None.</p>
+          ) : (
+            <ul className="grid gap-1 text-body">
+              {data.installations.map((i) => (
+                <li key={i.installationId} className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">@{i.accountLogin}</span>
+                  <Badge variant="kind">{i.accountType === "Organization" ? "organization" : "account"}</Badge>
+                  <span className="text-label text-muted-foreground">installation {i.installationId}, since {i.since.slice(0, 10)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="text-caption text-muted-foreground">Which GitHub accounts authorized the App for this person. Which repositories, and their contents, stay on GitHub.</p>
+        </section>
+      )}
       <section className="grid gap-2">
         <h2 className="text-title font-medium">Shared reports</h2>
         {data.shared.length === 0 ? (

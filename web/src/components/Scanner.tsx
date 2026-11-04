@@ -1,11 +1,12 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, cn } from "@gateseeker/ui-kit";
-import { Loader2, ShieldAlert, ShieldQuestion } from "lucide-react";
+import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, cn } from "@gateseeker/ui-kit";
+import { Loader2, LockKeyhole, ShieldAlert, ShieldQuestion } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { scanRepository, type ScanOutcome } from "../api";
 import { useAuth } from "../auth-context";
 import { recordAnalysis } from "../history";
 import { notify } from "../notifications";
+import { rememberPendingAnalysis } from "../scan-note";
 
 /**
  * The pieces of an analysis (Figma "Analyze Repository"): the scan hook that
@@ -109,20 +110,30 @@ export function Progress({ startedAt, url }: { startedAt: number; url: string })
   );
 }
 
-export function Refusal({ url, code, message }: { url: string; code: string; message: string }) {
+export function Refusal({ url, code, message, installUrl }: { url: string; code: string; message: string; installUrl?: string | undefined }) {
   const incomplete = code === "timeout" || code === "upstream-error" || code === "download-failed" || code === "store-unavailable";
   const limited = code === "rate-limited" || code === "unauthorized";
+  // A private repository with the GitHub App configured: the authorization is one screen away (docs/SPRINT_8.md 3.4).
+  const authorize = code === "private" && installUrl !== undefined;
   return (
-    <Card className={cn(incomplete || limited ? "border-warning/60" : "border-destructive/60")} role="alert">
+    <Card className={cn(incomplete || limited || authorize ? "border-warning/60" : "border-destructive/60")} role="alert">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          {incomplete || limited ? <ShieldQuestion className="size-5 text-warning" aria-hidden="true" /> : <ShieldAlert className="size-5 text-destructive" aria-hidden="true" />}
-          {limited ? (code === "rate-limited" ? "Hourly limit reached" : "Sign in required") : incomplete ? "Analysis incomplete" : "Could not analyze this URL"}
+          {authorize ? <LockKeyhole className="size-5 text-warning" aria-hidden="true" /> : incomplete || limited ? <ShieldQuestion className="size-5 text-warning" aria-hidden="true" /> : <ShieldAlert className="size-5 text-destructive" aria-hidden="true" />}
+          {authorize ? "This repository is private" : limited ? (code === "rate-limited" ? "Hourly limit reached" : "Sign in required") : incomplete ? "Analysis incomplete" : "Could not analyze this URL"}
         </CardTitle>
         <CardDescription className="break-all font-mono text-label">{url}</CardDescription>
       </CardHeader>
       <CardContent className="text-body">
         <p>{message}</p>
+        {authorize && (
+          <div className="mt-3 grid gap-2">
+            <p className="text-muted-foreground">GitHub will ask which repositories Gateseeker may read. Nothing is installed in the repository, and the analysis resumes here when you come back.</p>
+            <Button className="justify-self-start" onClick={() => { rememberPendingAnalysis(url); window.location.assign(installUrl); }} data-testid="allow-access">
+              <LockKeyhole aria-hidden="true" /> Allow access on GitHub
+            </Button>
+          </div>
+        )}
         {incomplete && <p className="mt-2 text-muted-foreground">An incomplete analysis is never reported as "no vulnerabilities". Try again in a moment, or run the CLI locally.</p>}
         <p className="mt-3 text-label text-muted-foreground">
           Error code <code>{code}</code>

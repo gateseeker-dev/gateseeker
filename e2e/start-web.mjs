@@ -6,9 +6,14 @@
 //   GET  /acme/vibe/tar.gz/<sha>           -> fixtures/projects/vibe-next-supabase as a tarball
 //   GET  /repos/acme/private               -> 404 (private or missing)
 //   GET  /repos/acme/huge                  -> a repository over the size limit
+//   GET  /repos/acme/secret                -> 404 without the installation token, a private record with it (Sprint 8)
+//   GET  /repos/acme/secret/tarball/<sha>  -> the vibe fixture, with the installation token only
+//   GET  /apps/gateseeker-e2e/installations/new?state= -> GitHub's install screen: sends the browser straight back to the site
+//   GET  /app/installations/77, POST .../access_tokens, GET /installation/repositories -> the App's endpoints for installation 77 (account "acme")
 //   POST /v1/query                         -> OSV: no vulnerabilities
 // Any other owner/repo answers 404.
 import { spawn } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { join, relative } from "node:path";
@@ -66,6 +71,11 @@ function tarDirectory(dir, prefix) {
 const archive = tarDirectory(FIXTURE, `vibe-${SHA.slice(0, 7)}`);
 const archiveFixed = tarDirectory(FIXED, `vibe-${SHA_FIXED.slice(0, 7)}`);
 
+// The GitHub App of the browser tests: a key generated for this run; the stub does not verify the JWT, only its presence.
+const APP_KEY = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({ type: "pkcs1", format: "pem" }).toString();
+const INSTALLATION_TOKEN = "ghs_e2einstallationtoken0123456789abcdef";
+const SITE = "http://127.0.0.1:4321";
+
 const stub = createServer((req, res) => {
   const url = new URL(req.url ?? "/", "http://stub");
   const json = (status, body) => {
@@ -73,6 +83,24 @@ const stub = createServer((req, res) => {
     res.end(JSON.stringify(body));
   };
   if (req.method === "POST" && url.pathname === "/v1/query") return json(200, { vulns: [] });
+  // --- the GitHub App (Sprint 8) ---
+  const auth = req.headers.authorization ?? "";
+  if (url.pathname === "/apps/gateseeker-e2e/installations/new") {
+    // GitHub's install screen, reduced to its outcome: the person picked repositories and is sent back with the installation.
+    res.writeHead(302, { location: `${SITE}/app/github/setup?installation_id=77&state=${encodeURIComponent(url.searchParams.get("state") ?? "")}` });
+    return res.end();
+  }
+  if (url.pathname === "/app/installations/77") return auth.startsWith("Bearer ey") ? json(200, { id: 77, account: { login: "acme", type: "Organization" } }) : json(401, { message: "Bad credentials" });
+  if (url.pathname === "/app/installations/77/access_tokens" && req.method === "POST") return auth.startsWith("Bearer ey") ? json(201, { token: INSTALLATION_TOKEN, expires_at: "2099-01-01T00:00:00Z" }) : json(401, { message: "Bad credentials" });
+  if (url.pathname === "/installation/repositories") return json(200, { total_count: 1, repositories: [{ full_name: "acme/secret" }] });
+  const withToken = auth === `Bearer ${INSTALLATION_TOKEN}`;
+  if (url.pathname === "/repos/acme/secret") return withToken ? json(200, { full_name: "acme/secret", private: true, size: 300, default_branch: "main", html_url: "https://github.com/acme/secret" }) : json(404, { message: "Not Found" });
+  if (url.pathname.startsWith("/repos/acme/secret/commits/")) return withToken ? json(200, { sha: SHA }) : json(404, { message: "Not Found" });
+  if (url.pathname === `/repos/acme/secret/tarball/${SHA}`) {
+    if (!withToken) return json(404, { message: "Not Found" });
+    res.writeHead(200, { "content-type": "application/x-gzip", "content-length": archive.length });
+    return res.end(archive);
+  }
   if (url.pathname === "/repos/acme/vibe") return json(200, { full_name: "acme/vibe", private: false, size: 300, default_branch: "main", html_url: "https://github.com/acme/vibe" });
   if (url.pathname === "/repos/acme/huge") return json(200, { full_name: "acme/huge", private: false, size: 900_000, default_branch: "main", html_url: "https://github.com/acme/huge" });
   if (url.pathname === "/repos/acme/vibe/commits/fixed") return json(200, { sha: SHA_FIXED });
@@ -102,6 +130,10 @@ stub.listen(4322, "127.0.0.1", () => {
       GATESEEKER_EXAMPLE_REPO: "https://github.com/acme/vibe",
       GATESEEKER_SCAN_LIMIT: "3",
       GATESEEKER_ADMIN_LOGINS: "e2e-user",
+      GATESEEKER_GITHUB_APP_ID: "1",
+      GATESEEKER_GITHUB_APP_SLUG: "gateseeker-e2e",
+      GATESEEKER_GITHUB_APP_KEY: APP_KEY,
+      GATESEEKER_GITHUB_WEB: "http://127.0.0.1:4322",
     },
   });
   const stop = () => {

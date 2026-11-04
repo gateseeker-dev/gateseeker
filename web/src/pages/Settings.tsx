@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { deleteAccount } from "../api";
 import { useAuth } from "../auth-context";
 import { FollowedList } from "../components/FollowedList";
+import { GitHubAccess } from "../components/GitHubAccess";
 import { PageSkeleton } from "../components/Skeletons";
 import { useNotifications } from "../notifications";
 import { Link, navigate } from "../router";
@@ -38,8 +39,23 @@ function Row({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
+/** Whether this server analyzes private repositories through the GitHub App (GET /api/config). */
+function useGitHubApp(): boolean {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/config")
+      .then((r) => r.json() as Promise<{ githubApp?: unknown }>)
+      .then((b) => { if (!cancelled) setOn(b.githubApp === true); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+  return on;
+}
+
 export function SettingsPage() {
   const auth = useAuth();
+  const githubApp = useGitHubApp();
   const notifications = useNotifications(auth.session?.user.id ?? null);
 
   useEffect(() => {
@@ -91,11 +107,17 @@ export function SettingsPage() {
         </div>
       </Section>
 
+      {githubApp && (
+        <Section title="GitHub access" description="Accounts and organizations that let Gateseeker read their private repositories: read-only, only the repositories picked on GitHub, no credential kept. Disconnect forgets the authorization here; the App itself is uninstalled on GitHub.">
+          <GitHubAccess token={auth.session.accessToken} />
+        </Section>
+      )}
+
       <Section title="Reports and limits" description="What the service keeps and how much you can analyze.">
         <dl className="grid gap-3">
           <Row label="Saved reports" value="Kept for 30 days, opened only by your account" />
           <Row label="History" value="One line per analysis, kept for 180 days" />
-          <Row label="Repositories" value="Public GitHub repositories, up to 50MB compressed" />
+          <Row label="Repositories" value={githubApp ? "Public GitHub repositories, or private ones you authorize, up to 50MB compressed" : "Public GitHub repositories, up to 50MB compressed"} />
           <Row label="What runs" value="Nothing: files are read as text, never installed or executed" />
           <Row label="Analyses" value="Limited per hour; the count shows after each analysis" />
         </dl>

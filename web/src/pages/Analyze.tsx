@@ -7,7 +7,7 @@ import { Progress, Refusal, ScanIcon, useScan } from "../components/Scanner";
 import { PageSkeleton } from "../components/Skeletons";
 import { latestPerRepository, useScanHistory } from "../history";
 import { navigate } from "../router";
-import { leaveScanNote, workspaceBackPath } from "../scan-note";
+import { leaveScanNote, takePendingAnalysis, workspaceBackPath } from "../scan-note";
 import { ReportView } from "../views/Report";
 
 /**
@@ -22,17 +22,18 @@ import { ReportView } from "../views/Report";
  * Refusals stay here, under the field, so the URL can be fixed in place.
  */
 
-function useExampleRepo(): string | null {
-  const [url, setUrl] = useState<string | null>(null);
+/** The example repository, and whether this server analyzes private repositories through the GitHub App. */
+function useAnalyzeConfig(): { example: string | null; githubApp: boolean } {
+  const [config, setConfig] = useState<{ example: string | null; githubApp: boolean }>({ example: null, githubApp: false });
   useEffect(() => {
     let cancelled = false;
     void fetch("/api/config")
-      .then((r) => r.json() as Promise<{ exampleRepo?: unknown }>)
-      .then((b) => { if (!cancelled && typeof b.exampleRepo === "string") setUrl(b.exampleRepo); })
+      .then((r) => r.json() as Promise<{ exampleRepo?: unknown; githubApp?: unknown }>)
+      .then((b) => { if (!cancelled) setConfig({ example: typeof b.exampleRepo === "string" ? b.exampleRepo : null, githubApp: b.githubApp === true }); })
       .catch(() => undefined);
     return () => { cancelled = true; };
   }, []);
-  return url;
+  return config;
 }
 
 export function AnalyzePage() {
@@ -68,9 +69,16 @@ function FocusFrame({ onBack, children }: { onBack: () => void; children: ReactN
 function Analyze({ token, userId }: { token: string; userId: string }) {
   const [url, setUrl] = useState("");
   const { phase, start, cancel } = useScan(token);
-  const example = useExampleRepo();
+  const { example, githubApp } = useAnalyzeConfig();
   const recent = latestPerRepository(useScanHistory(userId, token).records).slice(0, 3);
   const running = phase.kind === "running";
+
+  // Back from GitHub's authorization screen: the interrupted analysis runs again by itself.
+  useEffect(() => {
+    const pending = takePendingAnalysis();
+    if (pending) void run(pending);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on mount
+  }, []);
 
   const leave = () => {
     if (running && !window.confirm("Stop the analysis and leave?")) return;
@@ -105,7 +113,7 @@ function Analyze({ token, userId }: { token: string; userId: string }) {
       <div className={cn("grid w-full max-w-xl justify-items-center gap-4 text-center", phase.kind === "idle" ? "mt-[14vh]" : "mt-10")}>
         <Logo className="h-7 w-auto" />
         <h1 className="text-display font-medium">Find what to fix before you ship</h1>
-        <p className="text-label text-muted-foreground">Paste the URL of a public GitHub repository. Gateseeker reads it, never runs it, and ranks what to fix.</p>
+        <p className="text-label text-muted-foreground">{githubApp ? "Paste the URL of a GitHub repository, public or one of yours that is private. Gateseeker reads it, never runs it, and ranks what to fix." : "Paste the URL of a public GitHub repository. Gateseeker reads it, never runs it, and ranks what to fix."}</p>
         <form onSubmit={submit} className="flex w-full flex-col gap-2 sm:flex-row">
           <IconInput
             autoFocus
@@ -129,7 +137,7 @@ function Analyze({ token, userId }: { token: string; userId: string }) {
             </Button>
           )}
         </form>
-        <p className="text-caption text-muted-foreground">Public repositories only, up to 50 MB compressed. Nothing is installed or run. Reports stay in your Scans for 30 days.</p>
+        <p className="text-caption text-muted-foreground">{githubApp ? "Public repositories, or private ones you authorize on GitHub (read-only), up to 50 MB compressed." : "Public repositories only, up to 50 MB compressed."} Nothing is installed or run. Reports stay in your Scans for 30 days.</p>
         {!running && (example !== null || recent.length > 0) && (
           <div className="flex flex-wrap justify-center gap-2" aria-label="Shortcuts">
             {example !== null && (
@@ -148,7 +156,7 @@ function Analyze({ token, userId }: { token: string; userId: string }) {
 
       <div className={cn("mt-8 w-full", phase.kind === "done" && phase.outcome.ok ? "max-w-5xl" : "max-w-xl")}>
         {running && <Progress startedAt={phase.startedAt} url={phase.url} />}
-        {phase.kind === "done" && !phase.outcome.ok && <Refusal url={phase.url} code={phase.outcome.error.code} message={phase.outcome.error.message} />}
+        {phase.kind === "done" && !phase.outcome.ok && <Refusal url={phase.url} code={phase.outcome.error.code} message={phase.outcome.error.message} installUrl={phase.outcome.error.installUrl} />}
         {/* Only when the service saved nothing (local server without a store): the report shows here instead of on its own page. */}
         {phase.kind === "done" && phase.outcome.ok && phase.outcome.id === null && <ReportView response={phase.outcome} elapsedMs={phase.elapsedMs} />}
       </div>

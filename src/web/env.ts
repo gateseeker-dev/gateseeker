@@ -3,6 +3,7 @@ import { createStaticAuth, createSupabaseAuth } from "./auth.js";
 import { DEFAULT_QUOTA, type HandlerOptions, type MailSettings } from "./handler.js";
 import { createBrevoMailer, createMemoryMailer, createStaticDirectory, createSupabaseDirectory } from "./mail.js";
 import { parseGitHubRepoUrl } from "./github-url.js";
+import { validAppKey, type GitHubAppConfig } from "./github-app.js";
 import { createMemoryStore, createSupabaseStore } from "./store.js";
 
 /**
@@ -23,7 +24,9 @@ import { createMemoryStore, createSupabaseStore } from "./store.js";
  *                              email provider and sender address; without them nothing is sent (unsubscribe links still work)
  *   GATESEEKER_PUBLIC_URL      the site's address for links in emails (default https://gateseeker.vercel.app)
  *   GATESEEKER_EMAIL_DAILY_CAP emails per UTC day (default 250, at most 300: Brevo's free plan)
- *   GATESEEKER_GITHUB_API, GATESEEKER_GITHUB_ARCHIVE, GATESEEKER_OSV_ENDPOINT, GATESEEKER_PACKAGIST_BASE
+ *   GATESEEKER_GITHUB_APP_ID, GATESEEKER_GITHUB_APP_SLUG, GATESEEKER_GITHUB_APP_KEY
+ *                              the GitHub App that reads private repositories (docs/SPRINT_8.md); all three or the feature is off
+ *   GATESEEKER_GITHUB_API, GATESEEKER_GITHUB_ARCHIVE, GATESEEKER_GITHUB_WEB, GATESEEKER_OSV_ENDPOINT, GATESEEKER_PACKAGIST_BASE
  *                              upstream overrides (tests point them at stubs)
  */
 
@@ -55,6 +58,32 @@ export function adminLoginsFromEnv(env: Env): string[] {
     .split(",")
     .map((x) => x.trim())
     .filter((x) => /^[A-Za-z0-9-]{1,39}$/.test(x));
+}
+
+/**
+ * The GitHub App from the environment, or null (feature off) when a variable
+ * is missing or the key does not parse. A present but unusable key is reported
+ * on stderr once, so a deploy with a mangled key is noticed instead of
+ * silently analyzing public repositories only.
+ */
+export function githubAppFromEnv(env: Env, fetchFn?: typeof fetch): GitHubAppConfig | null {
+  const appId = env.GATESEEKER_GITHUB_APP_ID?.trim() ?? "";
+  const slug = env.GATESEEKER_GITHUB_APP_SLUG?.trim() ?? "";
+  // Vercel keeps the PEM's line breaks; a key pasted with literal "\n" is accepted too.
+  const privateKey = (env.GATESEEKER_GITHUB_APP_KEY ?? "").replace(/\\n/g, "\n").trim();
+  if (!appId && !slug && !privateKey) return null;
+  if (!/^\d{1,12}$/.test(appId) || !/^[A-Za-z0-9-]{1,64}$/.test(slug) || !validAppKey(privateKey)) {
+    console.error("gateseeker: GATESEEKER_GITHUB_APP_ID, GATESEEKER_GITHUB_APP_SLUG and GATESEEKER_GITHUB_APP_KEY must all be set and valid; private repositories are off.");
+    return null;
+  }
+  return {
+    appId,
+    slug,
+    privateKey,
+    ...(env.GATESEEKER_GITHUB_API ? { apiBase: env.GATESEEKER_GITHUB_API } : {}),
+    ...(env.GATESEEKER_GITHUB_WEB ? { webBase: env.GATESEEKER_GITHUB_WEB } : {}),
+    ...(fetchFn ? { fetch: fetchFn } : {}),
+  };
 }
 
 export const DEFAULT_PUBLIC_URL = "https://gateseeker.vercel.app";
@@ -111,6 +140,7 @@ export function handlerOptionsFromEnv({ env, workDir, fetch: fetchFn, requireAut
     ...(env.GITHUB_TOKEN ? { githubToken: env.GITHUB_TOKEN } : {}),
     exampleRepo: exampleRepoFromEnv(env),
     adminLogins: adminLoginsFromEnv(env),
+    ...(() => { const app = githubAppFromEnv(env, fetchFn); return app ? { githubApp: app } : {}; })(),
     // A short key is ignored rather than trusted: published sets are then not used and the reports say "bundled".
     ...(env.GATESEEKER_FEED_KEY && env.GATESEEKER_FEED_KEY.length >= MIN_FEED_KEY_LENGTH ? { feedKey: env.GATESEEKER_FEED_KEY } : {}),
   };
