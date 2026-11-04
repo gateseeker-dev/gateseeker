@@ -35,7 +35,7 @@ export function CiSnippet({ repository }: { repository?: { owner: string; repo: 
           <pre className="overflow-x-auto rounded-md border bg-input p-4 font-mono text-xs leading-relaxed inset-shadow-solid"><code>{WORKFLOW_YAML}</code></pre>
           <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
             <Terminal className="size-4" aria-hidden="true" />
-            Or locally: <code className="rounded bg-muted px-1.5 py-0.5">npx gateseeker@beta scan .</code>
+            Or locally: <code className="rounded bg-muted px-1.5 py-0.5">npx gateseeker scan .</code>
           </p>
         </CardContent>
       </Card>

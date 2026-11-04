@@ -19,9 +19,9 @@ export function GetStarted() {
         </Step>
 
         <Step n={2} icon={<Terminal aria-hidden="true" />} title="On your machine, any repository" description="Needs Node 24. Nothing is installed from the analyzed project; the CLI only reads it.">
-          <pre className="overflow-x-auto rounded-md border bg-input p-4 font-mono text-xs leading-relaxed inset-shadow-solid"><code>{`npx gateseeker@beta scan .            # text report, exit code is the verdict
-npx gateseeker@beta scan . --format json --output report.json
-npx gateseeker@beta scan . --baseline base.lock   # compare with a previous lockfile`}</code></pre>
+          <pre className="overflow-x-auto rounded-md border bg-input p-4 font-mono text-xs leading-relaxed inset-shadow-solid"><code>{`npx gateseeker scan .            # text report, exit code is the verdict
+npx gateseeker scan . --format json --output report.json
+npx gateseeker scan . --baseline base.lock   # compare with a previous lockfile`}</code></pre>
           <p className="mt-3 text-sm text-muted-foreground">
             Exit codes: 0 pass, 1 fail, 2 incomplete, 3 usage error. Every option is in the <Link href="https://github.com/gateseeker-dev/gateseeker#readme" className="text-primary hover:underline">README</Link>.
           </p>

@@ -1,6 +1,6 @@
 # Gateseeker
 
-[![checked with Gateseeker](https://gateseeker.vercel.app/badge.svg)](https://gateseeker.vercel.app) [![npm](https://img.shields.io/npm/v/gateseeker/beta)](https://www.npmjs.com/package/gateseeker)
+[![checked with Gateseeker](https://gateseeker.vercel.app/badge.svg)](https://gateseeker.vercel.app) [![npm](https://img.shields.io/npm/v/gateseeker)](https://www.npmjs.com/package/gateseeker)
 
 Security gate for AI-generated code. *(working description; branding and tagline are pending)*
 

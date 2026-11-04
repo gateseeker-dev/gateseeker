@@ -2,7 +2,9 @@
 
 One short section per published version, newest first. The workspace links the current section from its "updated" notice, so write for the person who uses the product, not for the engineer.
 
-## Unreleased
+## 1.0.0 (2026-11-04)
+
+First stable version: `npm install gateseeker` now gets this one (`latest`), and the Action is listed on the GitHub Marketplace.
 
 - Admin master: an admin area (`/app/admin`) with accounts, last access and activity, and a User/Admin switch in the sidebar for the configured admin logins.
 - Update notice: open workspaces learn about a new version within minutes and offer to reload; the CLI and the Action say when a newer version exists.
