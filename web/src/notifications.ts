@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from "react";
  * malformed entry must not break the page) and rendered as text only.
  */
 
-export type NotificationKind = "finished" | "incomplete" | "refused";
+export type NotificationKind = "finished" | "incomplete" | "refused" | "update";
 
 export interface WorkspaceNotification {
   id: string;
@@ -64,7 +64,7 @@ function isNotification(v: unknown): v is WorkspaceNotification {
   const n = v as Record<string, unknown>;
   return (
     typeof n.id === "string" &&
-    (n.kind === "finished" || n.kind === "incomplete" || n.kind === "refused") &&
+    (n.kind === "finished" || n.kind === "incomplete" || n.kind === "refused" || n.kind === "update") &&
     typeof n.subject === "string" &&
     (n.verdict === null || n.verdict === "pass" || n.verdict === "fail" || n.verdict === "incomplete") &&
     typeof n.p1 === "number" &&
@@ -102,6 +102,15 @@ export function notify(user: string, entry: Omit<WorkspaceNotification, "id" | "
   if (prefs.onlyUrgent && entry.kind === "finished" && entry.p1 + entry.p2 === 0) return;
   const item: WorkspaceNotification = { ...entry, id: `${String(Date.now())}-${Math.random().toString(36).slice(2, 8)}`, at: new Date().toISOString(), read: false };
   writeJson(listKey(user), [item, ...readNotifications(user)].slice(0, MAX));
+}
+
+/** One "Gateseeker was updated" notification per version; preferences do not silence it. */
+export function notifyUpdate(user: string, version: string): void {
+  const subject = `Gateseeker ${version}`;
+  const existing = readNotifications(user);
+  if (existing.some((n) => n.kind === "update" && n.subject === subject)) return;
+  const item: WorkspaceNotification = { id: `update-${version}`, kind: "update", subject, verdict: null, p1: 0, p2: 0, reportId: null, message: "A new version is running. Reload the page to use it; see what changed in the changelog.", at: new Date().toISOString(), read: false };
+  writeJson(listKey(user), [item, ...existing].slice(0, MAX));
 }
 
 export function useNotifications(user: string | null) {

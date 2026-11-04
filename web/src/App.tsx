@@ -15,6 +15,7 @@ import { HowItWorks } from "./pages/HowItWorks";
 import { Privacy, Terms } from "./pages/Legal";
 import { Login } from "./pages/Login";
 import { Resources, WorkspaceResources } from "./pages/Resources";
+import { AdminAccountPage, AdminAccountsPage, AdminOverviewPage } from "./pages/Admin";
 import { Advisories, AdvisoryPage } from "./pages/Advisories";
 import { PublicReportPage } from "./pages/PublicReport";
 import { SavedReport } from "./pages/SavedReport";
@@ -55,6 +56,8 @@ const TITLES: Record<string, string> = {
   "/app/dashboard": "Dashboard · Gateseeker",
   "/app/scans": "Scans · Gateseeker",
   "/app/resources": "Resources · Gateseeker",
+  "/app/admin": "Admin · Gateseeker",
+  "/app/admin/accounts": "Accounts · Gateseeker",
 };
 
 /* The public site exists only for signed-out visitors; a session sends these to the workspace. /login forwards on its own. */
@@ -66,6 +69,7 @@ const WORKSPACE_HOME = "/app/dashboard";
 const REPORT_ROUTE = /^\/r\/([A-Za-z0-9-]{1,64})$/;
 const PUBLIC_REPORT_ROUTE = /^\/p\/([A-Za-z0-9-]{1,64})$/;
 const ADVISORY_ROUTE = /^\/advisories\/(GSK-ADV-\d{4}-\d{4})$/;
+const ADMIN_ACCOUNT_ROUTE = /^\/app\/admin\/accounts\/([0-9a-f-]{36})$/i;
 
 export function App() {
   return (
@@ -92,6 +96,7 @@ function Shell() {
   const reportId = REPORT_ROUTE.exec(path)?.[1] ?? null;
   const publicReportId = PUBLIC_REPORT_ROUTE.exec(path)?.[1] ?? null;
   const advisoryId = ADVISORY_ROUTE.exec(path)?.[1] ?? null;
+  const adminAccountId = ADMIN_ACCOUNT_ROUTE.exec(path)?.[1] ?? null;
   useEffect(() => {
     document.title = TITLES[path] ?? (reportId ? "Scan · Gateseeker" : publicReportId ? "Shared report · Gateseeker" : advisoryId ? `${advisoryId} · Gateseeker` : "Gateseeker");
     setOpen(false);
@@ -122,13 +127,17 @@ function Shell() {
   else if (path === "/app/dashboard") page = <Dashboard />;
   else if (path === "/app/scans") page = <Scans />;
   else if (path === "/app/resources") page = <WorkspaceResources />;
+  else if (path === "/app/admin") page = <AdminOverviewPage />;
+  else if (path === "/app/admin/accounts") page = <AdminAccountsPage />;
+  else if (adminAccountId) page = <AdminAccountPage id={adminAccountId} />;
   else if (reportId) page = <SavedReport id={reportId} />;
 
   const signedIn = auth.status === "signed-in" && auth.session !== null;
   // Signed in, the workspace pages get the application frame instead of the site header and footer.
   // The analyze view is full screen: its own frame, no sidebar and no site header.
   if (path === "/app") return page;
-  const workspacePage: WorkspacePage | null = path === "/app/design-system" ? "design-system" : path === "/app/settings" ? "settings" : path === "/app/dashboard" ? "dashboard" : path === "/app/scans" ? "scans" : path === "/app/resources" ? "resources" : reportId ? "scan" : null;
+  const workspacePage: WorkspacePage | null =
+    path === "/app/design-system" ? "design-system" : path === "/app/settings" ? "settings" : path === "/app/dashboard" ? "dashboard" : path === "/app/scans" ? "scans" : path === "/app/resources" ? "resources" : path === "/app/admin" ? "admin" : path === "/app/admin/accounts" ? "admin-accounts" : adminAccountId ? "admin-account" : reportId ? "scan" : null;
   if (signedIn && workspacePage) return <Workspace page={workspacePage}>{page}</Workspace>;
   // A public page must not flash for a signed-in visitor: render nothing until the session is known, then redirect (effect above).
   if ((PUBLIC_ROUTES.has(path) || path in WORKSPACE_COUNTERPART) && (auth.status === "loading" || signedIn)) return <div className="min-h-dvh bg-background" />;

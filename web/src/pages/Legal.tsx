@@ -43,6 +43,7 @@ export function Privacy() {
               ["Analysis history", "One line per analysis (repository, commit, verdict, counts by priority), so the dashboard works on any device. Deleted after 180 days."],
               ["Followed repositories", "Which public repositories you follow, the date of the last check and a short summary of new findings waiting for the next email. Kept until you unfollow, unsubscribe from an email, or delete your account."],
               ["Usage limits", "How many analyses your account ran in the current hour, to keep the free service fair."],
+              ["Access dates", "When your account first used the service and when it last did, with a precision of five minutes. No IP address, browser or page is recorded. The product's operator sees these dates and your account's activity (which public repositories you analyzed and follow, and the reports you shared) to run the service, answer you and prevent abuse; never the findings of your reports."],
               ["Aggregate counters", "Daily totals such as visits to the sign-in page, sign-ins, checks of followed repositories, emails sent and unsubscribes. They hold no user, IP address or browser information."],
               ["In your browser", "Your session (so you stay signed in), a copy of your recent history, notifications and preferences, in local storage on your device. Clearing site data or signing out removes the session; deleting the account removes the rest from that browser."],
             ]}

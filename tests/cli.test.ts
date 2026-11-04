@@ -78,6 +78,30 @@ describe("gateseeker scan (CLI)", () => {
     expect(c.stderr()).toBe("");
   });
 
+  it("ends a text run with the newer-version line when a registry double says so, and stays silent when opted out", async () => {
+    responses["lodash"] = { status: 200, body: LODASH };
+    responses["zod"] = { status: 200, body: "{}" };
+    const registry = ((input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      return Promise.resolve(new Response(JSON.stringify(url.endsWith("/gateseeker/latest") ? { version: "99.0.0" } : {})));
+    }) as typeof fetch;
+    const c = capture();
+    const code = await main(["scan", fixturePath("lockfiles/direct-only.package-lock.json"), "--osv-endpoint", endpoint], { ...c.io, updateFetch: registry, env: {} });
+    expect(code).toBe(EXIT.fail);
+    expect(c.stderr()).toContain("Gateseeker 99.0.0 is available");
+    expect(c.stdout()).not.toContain("99.0.0");
+
+    const quiet = capture();
+    await main(["scan", fixturePath("lockfiles/direct-only.package-lock.json"), "--osv-endpoint", endpoint, "--no-update-check"], { ...quiet.io, updateFetch: registry, env: {} });
+    expect(quiet.stderr()).toBe("");
+    const byEnv = capture();
+    await main(["scan", fixturePath("lockfiles/direct-only.package-lock.json"), "--osv-endpoint", endpoint], { ...byEnv.io, updateFetch: registry, env: { GATESEEKER_NO_UPDATE_CHECK: "1" } });
+    expect(byEnv.stderr()).toBe("");
+    const json = capture();
+    await main(["scan", fixturePath("lockfiles/direct-only.package-lock.json"), "--osv-endpoint", endpoint, "--format", "json"], { ...json.io, updateFetch: registry, env: {} });
+    expect(json.stderr()).toBe("");
+  });
+
   it("exits 0 with the cautious wording when nothing is known", async () => {
     responses["lodash"] = { status: 200, body: "{}" };
     responses["zod"] = { status: 200, body: "{}" };

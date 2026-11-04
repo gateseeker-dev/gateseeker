@@ -1,6 +1,8 @@
+import { GATESEEKER_VERSION } from "gateseeker/dist/version.js";
 import { authConfigFromEnv, exampleRepoFromEnv, handlerOptionsFromEnv } from "gateseeker/dist/web/env.js";
 import {
   handleAccountRequest,
+  handleAdminRequest,
   handleCleanupRequest,
   handleEventRequest,
   handleExampleRequest,
@@ -61,7 +63,7 @@ async function route(req: Request): Promise<Response> {
 
   if (path === "/api/config") {
     if (method !== "GET") return refuse(405, "GET only.", "GET");
-    return Response.json({ ok: true, auth: authConfigFromEnv(process.env), exampleRepo: exampleRepoFromEnv(process.env) }, { headers: { "cache-control": "no-store" } });
+    return Response.json({ ok: true, auth: authConfigFromEnv(process.env), exampleRepo: exampleRepoFromEnv(process.env), version: GATESEEKER_VERSION }, { headers: { "cache-control": "no-store" } });
   }
   if (path === "/api/scan") {
     if (method !== "POST") return refuse(405, "POST only.", "POST");
@@ -76,6 +78,10 @@ async function route(req: Request): Promise<Response> {
   if (path === "/api/scans") {
     if (method !== "GET") return refuse(405, "GET only.", "GET");
     return answer(await handleScansRequest(options, authorization));
+  }
+  if (path.startsWith("/api/admin/")) {
+    if (method !== "GET") return refuse(405, "GET only.", "GET");
+    return answer(await handleAdminRequest(path.slice("/api/admin/".length), url.searchParams, options, authorization));
   }
   if (path === "/api/funnel") {
     if (method !== "GET") return refuse(405, "GET only.", "GET");

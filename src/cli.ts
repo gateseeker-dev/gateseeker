@@ -10,6 +10,7 @@ import { renderSummary } from "./report/summary.js";
 import { renderText } from "./report/text.js";
 import { PRIORITIES } from "./rules/priority.js";
 import { scan, scanDirectory, type ScanResult } from "./scan.js";
+import { checkForUpdate, updateLine } from "./update-check.js";
 import { GATESEEKER_VERSION } from "./version.js";
 
 /**
@@ -53,6 +54,8 @@ Options:
   --advisories <file>       Use this curated advisory set (JSON) instead of the bundled one
   --timeout <ms>            Per-request timeout for the OSV API (default: 10000)
   --concurrency <n>         Maximum simultaneous OSV requests (default: 5)
+  --no-update-check         Do not read the npm registry after a text run to report a newer version
+                            (also GATESEEKER_NO_UPDATE_CHECK=1). Never changes the verdict.
   --help, -h                Show this help
   --version, -v             Show version
 
@@ -62,6 +65,9 @@ Exit codes: 0 pass, 1 fail, 2 incomplete, 3 usage or rejected input.
 interface Io {
   stdout: (s: string) => void;
   stderr: (s: string) => void;
+  /** When given, a text run ends with one read of the npm registry to say whether a newer version exists (never in tests: they pass none or a double). */
+  updateFetch?: typeof fetch;
+  env?: Record<string, string | undefined>;
 }
 
 class UsageError extends Error {}
@@ -98,8 +104,10 @@ const optionSpec = {
   advisories: { type: "string" },
   timeout: { type: "string" },
   concurrency: { type: "string" },
+  "no-update-check": { type: "boolean" },
   // Undocumented: lets tests point the client at a local server.
   "osv-endpoint": { type: "string" },
+  "registry-url": { type: "string" },
   help: { type: "boolean", short: "h" },
   version: { type: "boolean", short: "v" },
 } as const;
@@ -224,6 +232,13 @@ export async function main(argv: string[], io: Io): Promise<number> {
     const rendered = format === "json" ? json : format === "sarif" ? JSON.stringify(renderSarif(result.report), null, 2) : format === "summary" ? renderSummary(result.report) : renderText(result.report);
     io.stdout(`${rendered}\n`);
 
+    // After the verdict, never before it, and only in the human-readable format.
+    const env = io.env ?? process.env;
+    if (format === "text" && io.updateFetch && values["no-update-check"] !== true && env.GATESEEKER_NO_UPDATE_CHECK !== "1") {
+      const latest = await checkForUpdate({ current: GATESEEKER_VERSION, fetch: io.updateFetch, ...(values["registry-url"] !== undefined ? { registry: values["registry-url"] } : {}) });
+      if (latest !== null) io.stderr(`${updateLine(GATESEEKER_VERSION, latest)}\n`);
+    }
+
     return EXIT[result.report.gate.verdict];
   } catch (err) {
     if (err instanceof UsageError) {
@@ -243,6 +258,7 @@ if (isDirectRun || process.env.GATESEEKER_CLI === "1") {
   const code = await main(process.argv.slice(2), {
     stdout: (s) => process.stdout.write(s),
     stderr: (s) => process.stderr.write(s),
+    updateFetch: globalThis.fetch,
   });
   process.exitCode = code;
 }

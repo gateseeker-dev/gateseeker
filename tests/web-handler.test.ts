@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { bearerToken, createStaticAuth, createSupabaseAuth } from "../src/web/auth.js";
 import { authConfigFromEnv, handlerOptionsFromEnv, STUB_TOKEN, STUB_USER } from "../src/web/env.js";
-import { currentAdvisories, handleAccountRequest, handleExampleRequest, handleFunnelRequest, handlePublicReportRequest, handleShareRequest, resetExampleCache, handleCleanupRequest, handleEventRequest, handleFeedPublishedRequest, handleFollowsRequest, handleUnsubscribeRequest, type MailSettings, handleMonitorRequest, handleReportRequest, handleScanRequest, handleScansRequest, type HandlerOptions, type ScanResponseOk } from "../src/web/handler.js";
+import { currentAdvisories, handleAccountRequest, handleAdminRequest, resetTouched, handleExampleRequest, handleFunnelRequest, handlePublicReportRequest, handleShareRequest, resetExampleCache, handleCleanupRequest, handleEventRequest, handleFeedPublishedRequest, handleFollowsRequest, handleUnsubscribeRequest, type MailSettings, handleMonitorRequest, handleReportRequest, handleScanRequest, handleScansRequest, type HandlerOptions, type ScanResponseOk } from "../src/web/handler.js";
 import { advisorySetFromText } from "../src/intel/advisories.js";
 import { signFeed } from "../src/intel/feed-signature.js";
 import { createMemoryMailer, createStaticDirectory } from "../src/web/mail.js";
@@ -264,6 +264,7 @@ describe("createSupabaseStore", () => {
       `DELETE https://p.supabase.co/rest/v1/reports?user_id=eq.${ALICE.id}`,
       `DELETE https://p.supabase.co/rest/v1/scan_quota?user_id=eq.${ALICE.id}`,
       `DELETE https://p.supabase.co/rest/v1/waitlist?user_id=eq.${ALICE.id}`,
+      `DELETE https://p.supabase.co/rest/v1/accounts?user_id=eq.${ALICE.id}`,
       `DELETE https://p.supabase.co/auth/v1/admin/users/${ALICE.id}`,
     ]);
     // Not an account id: nothing is sent at all.
@@ -1114,5 +1115,101 @@ describe("handleFunnelRequest", () => {
     expect(body.events.find((e) => e.kind === "signin_complete")?.count).toBe(1);
     expect(body.scans).toEqual({ scans: 1, accounts: 1 });
     expect(body.follows).toBe(1);
+  });
+});
+
+// --- Sprint 7: last access and the admin master routes ------------------------
+
+describe("last access (touchAccount)", () => {
+  it("records first and last seen on authenticated calls, at most once every 5 minutes, and forgets the account on deletion", async () => {
+    resetTouched();
+    let t = Date.parse("2026-11-04T10:00:00Z");
+    const now = () => new Date(t);
+    const store = createMemoryStore({ now });
+    const gh = fakeGitHub();
+    const opts = baseOptions(gh, { auth, store, now });
+    await handleScansRequest(opts, "Bearer tok-alice");
+    expect(await store.getAccount(ALICE.id)).toMatchObject({ login: "alice", firstSeen: "2026-11-04T10:00:00.000Z", lastSeen: "2026-11-04T10:00:00.000Z", scans: 0, follows: 0 });
+    t += 60_000;
+    await handleScansRequest(opts, "Bearer tok-alice");
+    expect((await store.getAccount(ALICE.id))?.lastSeen).toBe("2026-11-04T10:00:00.000Z");
+    t += 5 * 60_000;
+    await handleScansRequest(opts, "Bearer tok-alice");
+    expect((await store.getAccount(ALICE.id))?.lastSeen).toBe("2026-11-04T10:06:00.000Z");
+    expect(await store.getAccount(BOB.id)).toBeNull();
+    // A failing store never fails the request.
+    const broken: ReportStore = { ...store, touchAccount: () => Promise.reject(new Error("db down")) };
+    resetTouched();
+    expect((await handleScansRequest({ ...opts, store: broken }, "Bearer tok-alice")).status).toBe(200);
+    await handleAccountRequest("DELETE", { confirm: "alice" }, opts, "Bearer tok-alice");
+    expect(await store.getAccount(ALICE.id)).toBeNull();
+  });
+});
+
+describe("handleAdminRequest", () => {
+  it("serves the overview, the accounts and one account's activity to admins only, without report findings", async () => {
+    resetTouched();
+    const t = Date.parse("2026-11-04T10:00:00Z");
+    const now = () => new Date(t);
+    const store = createMemoryStore({ now });
+    const gh = fakeGitHub();
+    const opts = baseOptions(gh, { auth, store, now, adminLogins: ["alice"] });
+    const first = await handleScanRequest({ url: "https://github.com/o/r" }, opts, "Bearer tok-bob");
+    const id = (first.body as ScanResponseOk).id ?? "";
+    await handleShareRequest("POST", id, opts, "Bearer tok-bob");
+    await store.follow(BOB.id, "o", "r", 10);
+    await store.countEvent("login_view");
+    const q = new URLSearchParams();
+
+    expect(await handleAdminRequest("overview", q, opts, null)).toMatchObject({ status: 401 });
+    expect(await handleAdminRequest("overview", q, opts, "Bearer tok-bob")).toMatchObject({ status: 404 });
+    expect(await handleAdminRequest("overview", q, { ...opts, adminLogins: [] }, "Bearer tok-alice")).toMatchObject({ status: 404 });
+
+    const overview = await handleAdminRequest("overview", q, opts, "Bearer tok-alice");
+    expect(overview).toMatchObject({ status: 200, body: { ok: true, overview: { accounts: 2, active7: 2, new7: 2, scans7: 1, scans30: 1, follows: 1, sharedReports: 1 }, funnel: { days: 14 } } });
+    const funnel = (overview.body as { funnel: { events: { kind: string; count: number }[] } }).funnel;
+    expect(funnel.events.find((e) => e.kind === "login_view")?.count).toBe(1);
+
+    const accounts = await handleAdminRequest("accounts", q, opts, "Bearer tok-alice");
+    const list = (accounts.body as { accounts: { login: string; scans: number; follows: number }[]; next: string | null });
+    expect(list.accounts.map((a) => a.login).sort()).toEqual(["alice", "bob"]);
+    expect(list.accounts.find((a) => a.login === "bob")).toMatchObject({ scans: 1, follows: 1 });
+    expect(list.next).toBeNull();
+
+    const one = await handleAdminRequest(`accounts/${BOB.id}`, q, opts, "Bearer tok-alice");
+    expect(one.status).toBe(200);
+    const body = one.body as { account: { login: string }; scans: { owner: string; verdict: string }[]; follows: { owner: string }[]; shared: { id: string }[] };
+    expect(body.account.login).toBe("bob");
+    expect(body.scans).toMatchObject([{ owner: "o", verdict: "pass" }]);
+    expect(body.follows).toMatchObject([{ owner: "o" }]);
+    expect(body.shared).toMatchObject([{ id }]);
+    // Metadata only: no finding, no rule id, no snippet of anyone's report.
+    expect(JSON.stringify(one.body)).not.toContain("GSK-");
+    expect(JSON.stringify(one.body)).not.toContain("findings");
+
+    expect(await handleAdminRequest(`accounts/${ALICE.id.replace("1", "9")}`, q, opts, "Bearer tok-alice")).toMatchObject({ status: 404 });
+    expect(await handleAdminRequest("accounts/../etc", q, opts, "Bearer tok-alice")).toMatchObject({ status: 404 });
+    expect(await handleAdminRequest("nothing", q, opts, "Bearer tok-alice")).toMatchObject({ status: 404 });
+  });
+
+  it("pages the accounts by last access", async () => {
+    resetTouched();
+    let t = Date.parse("2026-11-04T10:00:00Z");
+    const store = createMemoryStore({ now: () => new Date(t) });
+    for (let i = 0; i < 60; i++) {
+      t += 10 * 60_000;
+      await store.touchAccount(`${String(i).padStart(8, "0")}-0000-4000-8000-000000000000`, `user${String(i)}`);
+    }
+    t += 10 * 60_000;
+    const opts: HandlerOptions = { auth, store, adminLogins: ["alice"], now: () => new Date(t) };
+    const page1 = (await handleAdminRequest("accounts", new URLSearchParams(), opts, "Bearer tok-alice")).body as { accounts: { login: string; lastSeen: string }[]; next: string | null };
+    // The admin's own call is recorded too, as the newest access.
+    expect(page1.accounts).toHaveLength(50);
+    expect(page1.accounts[0]?.login).toBe("alice");
+    expect(page1.accounts[1]?.login).toBe("user59");
+    expect(page1.next).toBe(page1.accounts[49]?.lastSeen);
+    const page2 = (await handleAdminRequest("accounts", new URLSearchParams({ before: page1.next ?? "" }), opts, "Bearer tok-alice")).body as { accounts: { login: string }[]; next: string | null };
+    expect(page2.accounts.map((a) => a.login)).toEqual(["user10", "user9", "user8", "user7", "user6", "user5", "user4", "user3", "user2", "user1", "user0"]);
+    expect(page2.next).toBeNull();
   });
 });

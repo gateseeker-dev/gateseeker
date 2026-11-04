@@ -11,7 +11,7 @@ import { bearerToken, type AuthUser, type AuthVerifier } from "./auth.js";
 import { resolveGitHubRepository, scanGitHubRepository, type ServiceErrorCode, type ServiceOptions, type ServiceSuccess } from "./service.js";
 import { alertEmail, alertItem, followConfirmationEmail, mergeAlert, pausedEmail, verifyUnsubscribe, type AlertItem, type EmailContext, type PendingAlert } from "./emails.js";
 import type { EmailDirectory, EmailMessage, Mailer } from "./mail.js";
-import { CLIENT_EVENT_KINDS, StoreError, type EventCount, type EventKind, type FollowRecord, type QuotaDecision, type ReportStore } from "./store.js";
+import { CLIENT_EVENT_KINDS, StoreError, TOUCH_INTERVAL_MS, type AccountRecord, type AdminOverview, type EventCount, type EventKind, type FollowRecord, type QuotaDecision, type ReportStore, type SharedReportSummary } from "./store.js";
 
 /**
  * Framework-agnostic HTTP handlers for the hosted service, shared by the
@@ -51,7 +51,28 @@ export interface ScanResponseError {
 
 export interface HttpResponse {
   status: number;
-  body: ScanResponseOk | ScanResponseError | ReportResponseOk | CleanupResponse | EventResponse | ScansResponse | FollowsResponse | MonitorResponse | FeedPublishedResponse | UnsubscribeResponse | ShareResponse | FunnelResponse;
+  body: ScanResponseOk | ScanResponseError | ReportResponseOk | CleanupResponse | EventResponse | ScansResponse | FollowsResponse | MonitorResponse | FeedPublishedResponse | UnsubscribeResponse | ShareResponse | FunnelResponse | AdminOverviewResponse | AdminAccountsResponse | AdminAccountResponse;
+}
+
+export interface AdminOverviewResponse {
+  ok: true;
+  overview: AdminOverview;
+  funnel: { since: string; days: number; events: EventCount[] };
+}
+
+export interface AdminAccountsResponse {
+  ok: true;
+  accounts: AccountRecord[];
+  /** Pass as `before` to get the next page; null at the end. */
+  next: string | null;
+}
+
+export interface AdminAccountResponse {
+  ok: true;
+  account: AccountRecord;
+  scans: ScanHistoryEntry[];
+  follows: FollowView[];
+  shared: SharedReportSummary[];
 }
 
 export interface ShareResponse {
@@ -166,13 +187,39 @@ export function toPublicReport(report: Report): PublicReport {
   return copy as PublicReport;
 }
 
+/** Last time each account was recorded by this instance: the store is asked at most once per TOUCH_INTERVAL_MS per account. */
+const touched = new Map<string, number>();
+
 async function authenticate(options: HandlerOptions, authorization: string | null | undefined): Promise<AuthUser | HttpResponse> {
   if (options.closed) return fail("store-unavailable", "Sign-in is not configured on this server, so analyses are disabled.");
   if (!options.auth) return { id: "anonymous", login: null };
   const token = bearerToken(authorization);
   if (token === null) return fail("unauthorized", "Sign in to analyze a repository.");
   const user = await options.auth.verify(token);
-  return user ?? fail("unauthorized", "Your session is invalid or has expired. Sign in again.");
+  if (!user) return fail("unauthorized", "Your session is invalid or has expired. Sign in again.");
+  if (options.store && user.login !== null) {
+    const at = (options.now ?? (() => new Date))().getTime();
+    const last = touched.get(user.id) ?? 0;
+    if (at - last >= TOUCH_INTERVAL_MS) {
+      touched.set(user.id, at);
+      try {
+        await options.store.touchAccount(user.id, user.login);
+      } catch {
+        /* last access is a convenience for the operator; the request goes on */
+      }
+    }
+  }
+  return user;
+}
+
+/** Tests only: forgets which accounts this instance already recorded. */
+export function resetTouched(): void {
+  touched.clear();
+}
+
+function isAdmin(options: HandlerOptions, who: AuthUser): boolean {
+  const admins = (options.adminLogins ?? []).map((x) => x.toLowerCase());
+  return who.login !== null && admins.includes(who.login.toLowerCase());
 }
 
 function isResponse(x: AuthUser | HttpResponse): x is HttpResponse {
@@ -495,8 +542,7 @@ export async function handleFunnelRequest(options: HandlerOptions, authorization
   if (!store) return fail("not-found", "No such route.");
   const who = await authenticate(options, authorization);
   if (isResponse(who)) return who;
-  const admins = (options.adminLogins ?? []).map((x) => x.toLowerCase());
-  if (who.login === null || !admins.includes(who.login.toLowerCase())) return fail("not-found", "No such route.");
+  if (!isAdmin(options, who)) return fail("not-found", "No such route.");
   const now = options.now ?? (() => new Date());
   const since = new Date(now().getTime() - (FUNNEL_DAYS - 1) * 86_400_000);
   const sinceDay = since.toISOString().slice(0, 10);
@@ -617,6 +663,8 @@ export async function handleAccountRequest(method: string, body: unknown, option
   if (!parsed.success || parsed.data.confirm.trim().replace(/^@/, "").toLowerCase() !== expected) return fail("bad-request", "Type your GitHub login to confirm.");
   try {
     await store.deleteAccount(who.id);
+    // A sign-in after deletion is a new account: record its first access again instead of waiting out the throttle.
+    touched.delete(who.id);
     return { status: 200, body: { ok: true } };
   } catch (e) {
     return storeFailure(e);
@@ -892,6 +940,59 @@ export async function handleUnsubscribeRequest(input: unknown, options: HandlerO
     await store.deleteFollow(f.id);
     await count(store, "unsubscribe");
     return { status: 200, body: { ok: true, repository: `${f.owner}/${f.repo}` } };
+  } catch (e) {
+    return storeFailure(e);
+  }
+}
+
+// --- admin master (docs/SPRINT_7.md 3.3) --------------------------------------
+
+const ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const ACCOUNTS_PAGE = 50;
+
+/**
+ * /api/admin/overview, /api/admin/accounts[?before=], /api/admin/accounts/<id>.
+ * Only for the logins in GATESEEKER_ADMIN_LOGINS; anyone else gets the 404 of
+ * a missing route. The account page shows that analyses happened (repository,
+ * commit, verdict, when), never the findings of someone's report.
+ */
+export async function handleAdminRequest(subpath: string, query: URLSearchParams, options: HandlerOptions, authorization?: string | null): Promise<HttpResponse> {
+  const store = options.store;
+  if (!store) return fail("not-found", "No such route.");
+  const who = await authenticate(options, authorization);
+  if (isResponse(who)) return who;
+  if (!isAdmin(options, who)) return fail("not-found", "No such route.");
+  const now = options.now ?? (() => new Date());
+  try {
+    if (subpath === "overview") {
+      const since = new Date(now().getTime() - (FUNNEL_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
+      const [overview, events] = await Promise.all([store.adminOverview(), store.listEvents(since)]);
+      return { status: 200, body: { ok: true, overview, funnel: { since, days: FUNNEL_DAYS, events } } };
+    }
+    if (subpath === "accounts") {
+      const before = query.get("before");
+      const rows = await store.listAccounts(ACCOUNTS_PAGE, before && !Number.isNaN(Date.parse(before)) ? before : null);
+      const last = rows[rows.length - 1];
+      return { status: 200, body: { ok: true, accounts: rows, next: rows.length === ACCOUNTS_PAGE && last ? last.lastSeen : null } };
+    }
+    const m = /^accounts\/([^/]+)$/.exec(subpath);
+    if (m && ACCOUNT_ID.test(m[1] ?? "")) {
+      const id = m[1] ?? "";
+      const account = await store.getAccount(id);
+      if (!account) return fail("not-found", "No account with this id.");
+      const [scans, follows, shared] = await Promise.all([store.listScans(id, 100), store.listFollows(id), store.listSharedReports(id)]);
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          account,
+          scans: scans.map((r) => ({ owner: r.owner, repo: r.repo, sha: r.sha, verdict: r.verdict, byPriority: r.byPriority, reportId: r.reportId, at: r.createdAt })),
+          follows: follows.map(followView),
+          shared,
+        },
+      };
+    }
+    return fail("not-found", "No such route.");
   } catch (e) {
     return storeFailure(e);
   }

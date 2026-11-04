@@ -3,8 +3,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { GATESEEKER_VERSION } from "../version.js";
 import { authConfigFromEnv, exampleRepoFromEnv, handlerOptionsFromEnv } from "./env.js";
-import { handleAccountRequest, handleExampleRequest, handleFunnelRequest, handlePublicReportRequest, handleShareRequest, handleCleanupRequest, handleEventRequest, handleFeedPublishedRequest, handleUnsubscribeRequest, handleFollowsRequest, handleMonitorRequest, handleReportRequest, handleScanRequest, handleScansRequest } from "./handler.js";
+import { handleAccountRequest, handleAdminRequest, handleExampleRequest, handleFunnelRequest, handlePublicReportRequest, handleShareRequest, handleCleanupRequest, handleEventRequest, handleFeedPublishedRequest, handleUnsubscribeRequest, handleFollowsRequest, handleMonitorRequest, handleReportRequest, handleScanRequest, handleScansRequest } from "./handler.js";
 
 /**
  * Development and end-to-end server for the public page: serves web/dist and
@@ -18,6 +19,7 @@ import { handleAccountRequest, handleExampleRequest, handleFunnelRequest, handle
  *   GET  /api/public/<id>     a shared report (no session)
  *   GET  /api/example         the example repository's report (no session, no quota)
  *   GET  /api/funnel          product counters (GATESEEKER_ADMIN_LOGINS only)
+ *   GET  /api/admin/overview, /api/admin/accounts[?before=], /api/admin/accounts/<id>  admin master (same logins)
  *   GET/POST/DELETE /api/follows  followed repositories of the signed-in user
  *   DELETE /api/account       delete the signed-in account and its data ({confirm: login})
  *   GET  /api/cron/monitor    rescan due followed repositories (bearer CRON_SECRET)
@@ -40,6 +42,8 @@ const host = "127.0.0.1";
 const MAX_BODY = 4096;
 
 const options = handlerOptionsFromEnv({ env: process.env });
+/** Stub mode only: POST /api/dev/version {version} makes /api/config report another version, for the update-notice test. */
+let reportedVersion: string = GATESEEKER_VERSION;
 const authConfig = authConfigFromEnv(process.env);
 const exampleRepo = exampleRepoFromEnv(process.env);
 
@@ -106,7 +110,7 @@ const server = createServer((req, res) => {
   const authorization = req.headers.authorization ?? null;
 
   if (url.pathname === "/api/config") {
-    json(res, 200, { ok: true, auth: authConfig, exampleRepo });
+    json(res, 200, { ok: true, auth: authConfig, exampleRepo, version: reportedVersion });
     return;
   }
   if (url.pathname === "/api/scan") {
@@ -192,6 +196,18 @@ const server = createServer((req, res) => {
     })();
     return;
   }
+  if (url.pathname === "/api/dev/version" && authConfig.mode === "stub" && req.method === "POST") {
+    void readBody(req).then((raw) => {
+      try {
+        const v = (JSON.parse(raw ?? "") as { version?: unknown }).version;
+        if (typeof v === "string" && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(v)) reportedVersion = v;
+      } catch {
+        /* ignored */
+      }
+      json(res, 200, { ok: true, version: reportedVersion });
+    });
+    return;
+  }
   if (url.pathname === "/api/dev/outbox" && authConfig.mode === "stub") {
     const mailer = options.mail?.mailer as { sent?: unknown[] } | null | undefined;
     json(res, 200, { ok: true, sent: mailer?.sent ?? [] });
@@ -222,6 +238,10 @@ const server = createServer((req, res) => {
   }
   if (url.pathname === "/api/example") {
     void handleExampleRequest(options).then((out) => { json(res, out.status, out.body); });
+    return;
+  }
+  if (url.pathname.startsWith("/api/admin/")) {
+    void handleAdminRequest(url.pathname.slice("/api/admin/".length), url.searchParams, options, authorization).then((out) => { json(res, out.status, out.body); });
     return;
   }
   if (url.pathname === "/api/funnel") {

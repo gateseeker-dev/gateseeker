@@ -1,0 +1,23 @@
+# Changelog
+
+One short section per published version, newest first. The workspace links the current section from its "updated" notice, so write for the person who uses the product, not for the engineer.
+
+## Unreleased
+
+- Admin master: an admin area (`/app/admin`) with accounts, last access and activity, and a User/Admin switch in the sidebar for the configured admin logins.
+- Update notice: open workspaces learn about a new version within minutes and offer to reload; the CLI and the Action say when a newer version exists.
+- Live example on the Home without signing in, shareable report links (`/p/<id>`), one public page per curated advisory, sharing image and README badge.
+
+## 1.0.0-beta.7 (2026-10-28)
+
+- First release under the `gateseeker-dev` organization. The hosted page (Sprint 4) follows in later versions; the engine, the CLI and the Action are unchanged from beta.6.
+
+## 1.0.0-beta.6 (2026-10-28)
+
+- First release published by CI with npm provenance (staged publishing, approved by the maintainer).
+- GitHub Action with SARIF output, pull-request comment and a configurable gate.
+- Composer lockfiles, structural supply-chain rules and the curated advisory feed next to OSV.
+
+## 1.0.0-beta.1 (2026-10-27)
+
+- First public build: `gateseeker scan` for `package-lock.json`, OSV lookups, explainable P1 to P4 priorities, gate exit codes, eight code-pattern rules for AI-generated apps.

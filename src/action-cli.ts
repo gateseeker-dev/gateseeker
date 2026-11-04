@@ -6,5 +6,6 @@ const code = await runAction({
   env: process.env,
   stdout: (s) => process.stdout.write(s),
   stderr: (s) => process.stderr.write(s),
+  updateFetch: globalThis.fetch,
 });
 process.exitCode = code;

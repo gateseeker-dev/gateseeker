@@ -41,6 +41,36 @@ export interface EventCount {
   count: number;
 }
 
+/** One account that used the service (Sprint 7): login and access dates, nothing else. */
+export interface AccountRecord {
+  userId: string;
+  login: string;
+  firstSeen: string;
+  lastSeen: string;
+  scans: number;
+  follows: number;
+}
+
+export interface AdminOverview {
+  accounts: number;
+  active7: number;
+  active30: number;
+  new7: number;
+  new30: number;
+  scans7: number;
+  scans30: number;
+  follows: number;
+  sharedReports: number;
+}
+
+export interface SharedReportSummary {
+  id: string;
+  owner: string;
+  repo: string;
+  sha: string;
+  createdAt: string;
+}
+
 export type NewReport = Omit<StoredReport, "id" | "createdAt" | "isPublic">;
 
 /** History line: what the Dashboard and Scans show, without the report body (which expires sooner). */
@@ -92,7 +122,7 @@ export type FollowResult = { ok: true; created: boolean; follow: FollowRecord } 
 
 /** Aggregate page events (login funnel): counted per UTC day, no user, IP or user agent. */
 /** Kinds the page may send to POST /api/event. */
-export const CLIENT_EVENT_KINDS = ["login_view", "login_start", "signin_complete", "email_click", "example_view", "public_report_view"] as const;
+export const CLIENT_EVENT_KINDS = ["login_view", "login_start", "signin_complete", "email_click", "example_view", "public_report_view", "update_banner_shown", "update_banner_reload"] as const;
 /** All kinds, including the ones only the service counts (monitor and emails, docs/SPRINT_6.md 3.7). */
 export const EVENT_KINDS = [...CLIENT_EVENT_KINDS, "rescan_complete", "rescan_incomplete", "rescan_failed", "email_follow_confirm", "email_alert", "email_paused", "email_capped", "email_failed", "unsubscribe"] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
@@ -143,7 +173,17 @@ export interface ReportStore {
   countScans(since: string): Promise<{ scans: number; accounts: number }>;
   /** Follows not paused, across all accounts. */
   countFollows(): Promise<number>;
+  /** Records an access of this account (first and last seen); the stored row changes at most once every 5 minutes. */
+  touchAccount(userId: string, login: string): Promise<void>;
+  adminOverview(): Promise<AdminOverview>;
+  /** Accounts by last access, newest first; `before` pages (last_seen strictly older). */
+  listAccounts(limit: number, before: string | null): Promise<AccountRecord[]>;
+  getAccount(userId: string): Promise<AccountRecord | null>;
+  /** Reports of one account that it shared; metadata only. */
+  listSharedReports(userId: string): Promise<SharedReportSummary[]>;
 }
+
+export const TOUCH_INTERVAL_MS = 5 * 60 * 1000;
 
 /** Queued follows first, earliest queued first; unqueued ones after (the "nulls last" of the Supabase query). */
 function byQueue(a: string | null, b: string | null): number {
@@ -162,6 +202,15 @@ export function createMemoryStore(clock: StoreClock = {}): ReportStore & { event
   const reports = new Map<string, StoredReport>();
   const scans: ScanSummary[] = [];
   const follows: FollowRecord[] = [];
+  const accounts = new Map<string, { login: string; firstSeen: string; lastSeen: string }>();
+  const toAccount = (userId: string, a: { login: string; firstSeen: string; lastSeen: string }): AccountRecord => ({
+    userId,
+    login: a.login,
+    firstSeen: a.firstSeen,
+    lastSeen: a.lastSeen,
+    scans: scans.filter((x) => x.userId === userId).length,
+    follows: follows.filter((f) => f.userId === userId && f.pausedReason === null).length,
+  });
   const feeds: SignedFeed[] = [];
   const emailDays = new Map<string, number>();
   const quota = new Map<string, { windowStart: number; used: number }>();
@@ -316,6 +365,52 @@ export function createMemoryStore(clock: StoreClock = {}): ReportStore & { event
       for (let i = scans.length - 1; i >= 0; i--) if (scans[i]?.userId === userId) scans.splice(i, 1);
       for (let i = follows.length - 1; i >= 0; i--) if (follows[i]?.userId === userId) follows.splice(i, 1);
       quota.delete(userId);
+      accounts.delete(userId);
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async touchAccount(userId, login) {
+      const at = now().toISOString();
+      const a = accounts.get(userId);
+      if (!a) accounts.set(userId, { login, firstSeen: at, lastSeen: at });
+      else if (Date.parse(at) - Date.parse(a.lastSeen) >= TOUCH_INTERVAL_MS) accounts.set(userId, { ...a, login, lastSeen: at });
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async adminOverview() {
+      const t = now().getTime();
+      const d7 = t - 7 * 86_400_000;
+      const d30 = t - 30 * 86_400_000;
+      const all = [...accounts.values()];
+      return {
+        accounts: all.length,
+        active7: all.filter((a) => Date.parse(a.lastSeen) >= d7).length,
+        active30: all.filter((a) => Date.parse(a.lastSeen) >= d30).length,
+        new7: all.filter((a) => Date.parse(a.firstSeen) >= d7).length,
+        new30: all.filter((a) => Date.parse(a.firstSeen) >= d30).length,
+        scans7: scans.filter((x) => Date.parse(x.createdAt) >= d7).length,
+        scans30: scans.filter((x) => Date.parse(x.createdAt) >= d30).length,
+        follows: follows.filter((f) => f.pausedReason === null).length,
+        sharedReports: [...reports.values()].filter((r) => r.isPublic).length,
+      };
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async listAccounts(limit, before) {
+      return [...accounts.entries()]
+        .map(([userId, a]) => toAccount(userId, a))
+        .filter((a) => before === null || a.lastSeen < before)
+        .sort((a, b) => b.lastSeen.localeCompare(a.lastSeen))
+        .slice(0, Math.min(Math.max(limit, 1), 200));
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async getAccount(userId) {
+      const a = accounts.get(userId);
+      return a ? toAccount(userId, a) : null;
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async listSharedReports(userId) {
+      return [...reports.values()]
+        .filter((r) => r.userId === userId && r.isPublic)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .map((r) => ({ id: r.id, owner: r.owner, repo: r.repo, sha: r.sha, createdAt: r.createdAt }));
     },
     // eslint-disable-next-line @typescript-eslint/require-await
     async setPublic(id, userId, isPublic) {
@@ -379,6 +474,8 @@ const rowSchema = z.looseObject({
 });
 
 const eventRowSchema = z.looseObject({ day: z.string(), kind: z.string(), count: z.number() });
+const accountRowSchema = z.looseObject({ user_id: z.string(), login: z.string(), first_seen: z.string(), last_seen: z.string(), scans: z.number(), follows: z.number() });
+const overviewSchema = z.looseObject({ accounts: z.number(), active_7: z.number(), active_30: z.number(), new_7: z.number(), new_30: z.number(), scans_7: z.number(), scans_30: z.number(), follows: z.number(), shared_reports: z.number() });
 
 const scanRowSchema = z.looseObject({
   id: z.string(),
@@ -609,8 +706,47 @@ export function createSupabaseStore(options: SupabaseStoreOptions): ReportStore 
       // Every table references auth.users with "on delete cascade", so deleting the user removes its rows. They are
       // deleted first anyway, so a failure part-way leaves less behind, never more; the waitlist only unlinks on cascade.
       const mine = new URLSearchParams({ user_id: `eq.${userId}` }).toString();
-      for (const table of ["follows", "scans", "reports", "scan_quota", "waitlist"]) await call(`/rest/v1/${table}?${mine}`, { method: "DELETE" });
+      for (const table of ["follows", "scans", "reports", "scan_quota", "waitlist", "accounts"]) await call(`/rest/v1/${table}?${mine}`, { method: "DELETE" });
       await call(`/auth/v1/admin/users/${userId}`, { method: "DELETE" });
+    },
+    async touchAccount(userId, login) {
+      await call("/rest/v1/rpc/touch_account", { method: "POST", body: JSON.stringify({ p_user: userId, p_login: login }) });
+    },
+    async adminOverview() {
+      const out = await call("/rest/v1/rpc/admin_overview", { method: "POST", body: "{}" });
+      const parsed = overviewSchema.safeParse(out);
+      if (!parsed.success) throw new StoreError("admin_overview returned an unexpected shape", 200);
+      const d = parsed.data;
+      return { accounts: d.accounts, active7: d.active_7, active30: d.active_30, new7: d.new_7, new30: d.new_30, scans7: d.scans_7, scans30: d.scans_30, follows: d.follows, sharedReports: d.shared_reports };
+    },
+    async listAccounts(limit, before) {
+      const out = await call("/rest/v1/rpc/admin_accounts", { method: "POST", body: JSON.stringify({ p_limit: Math.min(Math.max(limit, 1), 200), p_before: before }) });
+      const parsed = z.array(accountRowSchema).safeParse(out);
+      if (!parsed.success) throw new StoreError("admin_accounts returned an unexpected shape", 200);
+      return parsed.data.map((r) => ({ userId: r.user_id, login: r.login, firstSeen: r.first_seen, lastSeen: r.last_seen, scans: r.scans, follows: r.follows }));
+    },
+    async getAccount(userId) {
+      if (!ID.test(userId)) return null;
+      const q = new URLSearchParams({ user_id: `eq.${userId}`, limit: "1" });
+      const out = await call(`/rest/v1/accounts?${q.toString()}`, { method: "GET" });
+      const parsed = z.array(z.looseObject({ user_id: z.string(), login: z.string(), first_seen: z.string(), last_seen: z.string() })).safeParse(out);
+      if (!parsed.success) throw new StoreError("accounts query returned an unexpected shape", 200);
+      const row = parsed.data[0];
+      if (!row) return null;
+      const [scansRows, followRows] = await Promise.all([
+        call(`/rest/v1/scans?${new URLSearchParams({ user_id: `eq.${userId}`, select: "id", limit: "1000" }).toString()}`, { method: "GET" }),
+        call(`/rest/v1/follows?${new URLSearchParams({ user_id: `eq.${userId}`, paused_reason: "is.null", select: "id", limit: "1000" }).toString()}`, { method: "GET" }),
+      ]);
+      const count = (x: unknown): number => (Array.isArray(x) ? x.length : 0);
+      return { userId: row.user_id, login: row.login, firstSeen: row.first_seen, lastSeen: row.last_seen, scans: count(scansRows), follows: count(followRows) };
+    },
+    async listSharedReports(userId) {
+      if (!ID.test(userId)) return [];
+      const q = new URLSearchParams({ user_id: `eq.${userId}`, public: "is.true", select: "id,owner,repo,sha,created_at", order: "created_at.desc", limit: "100" });
+      const out = await call(`/rest/v1/reports?${q.toString()}`, { method: "GET" });
+      const parsed = z.array(z.looseObject({ id: z.string(), owner: z.string(), repo: z.string(), sha: z.string(), created_at: z.string() })).safeParse(out);
+      if (!parsed.success) throw new StoreError("reports query returned an unexpected shape", 200);
+      return parsed.data.map((r) => ({ id: r.id, owner: r.owner, repo: r.repo, sha: r.sha, createdAt: r.created_at }));
     },
   };
 }

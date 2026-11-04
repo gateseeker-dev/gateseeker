@@ -5,7 +5,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { deleteAccount } from "../api";
 import { useAuth } from "../auth-context";
 import { FollowedList } from "../components/FollowedList";
-import { ProductCounters } from "../components/ProductCounters";
 import { PageSkeleton } from "../components/Skeletons";
 import { useNotifications } from "../notifications";
 import { Link, navigate } from "../router";
@@ -101,8 +100,6 @@ export function SettingsPage() {
           <Row label="Analyses" value="Limited per hour; the count shows after each analysis" />
         </dl>
       </Section>
-
-      <ProductCounters token={auth.session.accessToken} />
 
       <Section title="Delete account" description="Removes your account and everything Gateseeker keeps for it. This cannot be undone.">
         <DeleteAccount token={auth.session.accessToken} userId={auth.session.user.id} login={login} onDeleted={() => { void auth.signOut().then(() => { navigate("/"); }); }} />

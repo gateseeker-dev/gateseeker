@@ -1,12 +1,15 @@
-import { AppShell, Avatar, Button, Logo, Menu, Skeleton, buttonVariants, menuItemClass, navItemClass } from "@gateseeker/ui-kit";
-import { ArrowLeft, Bell, BookOpen, ChevronUp, History, LayoutDashboard, LogOut, ScanSearch, Settings } from "lucide-react";
+import { AppShell, Avatar, Button, Logo, Menu, Segmented, Skeleton, buttonVariants, menuItemClass, navItemClass } from "@gateseeker/ui-kit";
+import { ArrowLeft, Bell, BookOpen, ChevronUp, Gauge, History, LayoutDashboard, LogOut, Palette, ScanSearch, Settings, Users } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
+import { useIsAdmin } from "./admin";
 import { useAuth } from "./auth-context";
 import { NotificationsPanel } from "./components/NotificationsPanel";
+import { UpdateBanner } from "./components/UpdateBanner";
 import { useNotifications } from "./notifications";
 import { Link, navigate } from "./router";
 import { rememberWorkspacePath } from "./scan-note";
+import { useUpdateNotice } from "./update-notice";
 
 /**
  * The signed-in workspace frame (Figma "Analyze Repository" and "Issues"):
@@ -21,9 +24,12 @@ import { rememberWorkspacePath } from "./scan-note";
  * skeletons so the page does not jump when it arrives.
  */
 
-export type WorkspacePage = "scans" | "scan" | "dashboard" | "resources" | "settings" | "design-system";
+export type WorkspacePage = "scans" | "scan" | "dashboard" | "resources" | "settings" | "design-system" | "admin" | "admin-accounts" | "admin-account";
 
-const TITLE: Record<WorkspacePage, string> = { scans: "Scans", scan: "Scan", dashboard: "Dashboard", resources: "Resources", settings: "Settings", "design-system": "Design system" };
+const TITLE: Record<WorkspacePage, string> = { scans: "Scans", scan: "Scan", dashboard: "Dashboard", resources: "Resources", settings: "Settings", "design-system": "Design system", admin: "Admin", "admin-accounts": "Accounts", "admin-account": "Account" };
+
+/** The admin pages show the admin sidebar; the switch reflects the page group and navigates, so a reload lands on "User" unless the address is an admin page. */
+const ADMIN_PAGES = new Set<WorkspacePage>(["admin", "admin-accounts", "admin-account"]);
 
 const TitleContext = createContext<(title: string | null) => void>(() => undefined);
 
@@ -47,6 +53,9 @@ export function Workspace({ page, loading = false, children }: { page: Workspace
   const notifications = useNotifications(auth.session?.user.id ?? null);
   const [panel, setPanel] = useState(false);
   const closePanel = useCallback(() => { setPanel(false); }, []);
+  const isAdmin = useIsAdmin(auth.session?.user.id ?? null, auth.session?.accessToken ?? null);
+  const adminMode = ADMIN_PAGES.has(page);
+  const update = useUpdateNotice(auth.session?.user.id ?? null);
 
   // The analyze view's back button returns here.
   useEffect(() => {
@@ -91,8 +100,37 @@ export function Workspace({ page, loading = false, children }: { page: Workspace
     </Menu>
   );
 
-  const nav = (
+  const modeSwitch = isAdmin === true && (
+    <div className="px-3 pb-3">
+      <Segmented
+        label="Workspace view"
+        className="w-full"
+        value={adminMode ? "admin" : "user"}
+        options={[
+          { value: "user", label: "User" },
+          { value: "admin", label: "Admin" },
+        ]}
+        onChange={(v) => { navigate(v === "admin" ? "/app/admin" : "/app/dashboard"); }}
+      />
+    </div>
+  );
+
+  const nav = adminMode ? (
     <>
+      {modeSwitch}
+      <Link href="/app/admin" aria-current={page === "admin" ? "page" : undefined} className={navItemClass(page === "admin")}>
+        <Gauge aria-hidden="true" /> Overview
+      </Link>
+      <Link href="/app/admin/accounts" aria-current={page === "admin-accounts" ? "page" : undefined} className={navItemClass(page === "admin-accounts" || page === "admin-account")}>
+        <Users aria-hidden="true" /> Accounts
+      </Link>
+      <Link href="/app/design-system" aria-current={page === "design-system" ? "page" : undefined} className={navItemClass(page === "design-system")}>
+        <Palette aria-hidden="true" /> Design system
+      </Link>
+    </>
+  ) : (
+    <>
+      {modeSwitch}
       <Link href="/app/dashboard" aria-current={page === "dashboard" ? "page" : undefined} className={navItemClass(page === "dashboard")}>
         <LayoutDashboard aria-hidden="true" /> Dashboard
       </Link>
@@ -137,6 +175,7 @@ export function Workspace({ page, loading = false, children }: { page: Workspace
     <AppShell brand={<Link href="/app/dashboard" aria-label="GateSeeker workspace" className="flex items-center"><Logo label="GateSeeker" /></Link>} title={title} actions={actions} nav={nav} account={account}>
       {children}
       <NotificationsPanel open={panel} onClose={closePanel} items={notifications.items} onMarkAllRead={notifications.markAllRead} />
+      {update.latest && <UpdateBanner version={update.latest} onReload={update.reload} onLater={update.dismiss} />}
     </AppShell>
     </TitleContext.Provider>
   );

@@ -4,6 +4,8 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { renderSarif } from "../report/sarif.js";
 import { renderSummary } from "../report/summary.js";
+import { checkForUpdate } from "../update-check.js";
+import { GATESEEKER_VERSION } from "../version.js";
 import { lockfileKind, scanDirectory } from "../scan.js";
 import type { Report } from "../types.js";
 import { upsertStickyComment } from "./github.js";
@@ -26,6 +28,8 @@ export interface ActionIo {
   stdout: (s: string) => void;
   stderr: (s: string) => void;
   fetch?: typeof fetch;
+  /** When given, the job summary ends with a line when a newer Gateseeker exists on npm (tests pass none or a double). */
+  updateFetch?: typeof fetch;
   /** Injected for tests; defaults to `git` in the workspace. */
   gitShow?: (ref: string, path: string, cwd: string) => Promise<string | null>;
 }
@@ -131,7 +135,9 @@ export async function runAction(io: ActionIo): Promise<number> {
     await writeFile(sarifPath, `${JSON.stringify(renderSarif(report), null, 2)}\n`, "utf8");
   }
 
-  const summary = `${renderSummary(report)}\n\n<sub>${baselineNote}</sub>`;
+  const latest = io.updateFetch && env.GATESEEKER_NO_UPDATE_CHECK !== "1" ? await checkForUpdate({ current: GATESEEKER_VERSION, fetch: io.updateFetch }) : null;
+  const updateNote = latest !== null ? `\n\n<sub>Gateseeker ${latest} is available (this run used ${GATESEEKER_VERSION}). \`uses: gateseeker-dev/gateseeker@v1\` picks it up on its own; a pinned \`version\` input needs updating.</sub>` : "";
+  const summary = `${renderSummary(report)}\n\n<sub>${baselineNote}</sub>${updateNote}`;
   if (env.GITHUB_STEP_SUMMARY) await appendFile(env.GITHUB_STEP_SUMMARY, `${summary}\n`, "utf8");
   if (env.GITHUB_OUTPUT) {
     const out = [

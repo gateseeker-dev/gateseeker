@@ -6,7 +6,7 @@
  * page never waits on or reacts to the answer.
  */
 
-export type FunnelEvent = "login_view" | "login_start" | "signin_complete" | "email_click" | "example_view" | "public_report_view";
+export type FunnelEvent = "login_view" | "login_start" | "signin_complete" | "email_click" | "example_view" | "public_report_view" | "update_banner_shown" | "update_banner_reload";
 
 const SENT = "gateseeker:funnel:";
 const PENDING = "gateseeker:funnel:pending";
@@ -48,6 +48,16 @@ export function countLoginStart(): void {
 /** A signed-out visitor opened the live example on the Home. */
 export function countExampleView(): void {
   once("example_view");
+}
+
+/** The "updated" banner was shown for a new version. */
+export function countUpdateShown(): void {
+  once("update_banner_shown");
+}
+
+/** The person reloaded from the banner (sent before the reload, kept alive). */
+export function countUpdateReload(): void {
+  send("update_banner_reload");
 }
 
 /** A shared report (/p/<id>) was opened. */

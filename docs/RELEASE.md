@@ -18,7 +18,7 @@ O CI não publica diretamente: ele **prepara** a versão no npm (`npm stage publ
 
 ## A cada versão
 
-1. Engenharia: atualiza `version` em `package.json` e o `version` padrão em `action.yml` (iguais), atualiza o README se houver entradas novas, PR, CI verde, merge.
+1. Engenharia: atualiza `version` em `package.json` e o `version` padrão em `action.yml` (iguais), move a seção "Unreleased" de `CHANGELOG.md` para a versão (é o texto que o aviso de atualização do workspace linka), atualiza o README se houver entradas novas, PR, CI verde, merge.
 2. Engenharia: cria e envia a tag `vX.Y.Z` na main. `release.yml` roda `pnpm check` e os testes de navegador, confere que a tag bate com o `package.json`, confere a lista de arquivos do pacote, **prepara** a versão no npm com proveniência, cria a release no GitHub e move a tag flutuante `v1`.
 3. **[PO] Aprovar no npm.** Abra https://www.npmjs.com/package/gateseeker, aba **Staged Packages**, confira a versão e clique em **Approve**; confirme com o autenticador. Só então a versão fica instalável. Alternativa pela linha de comando: `npm stage list gateseeker` e `npm stage approve <id>`.
 4. PO: confira que a versão apareceu com o selo "Provenance" na página do pacote e que a release existe em https://github.com/gateseeker-dev/gateseeker/releases.

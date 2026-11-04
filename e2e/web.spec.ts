@@ -451,16 +451,56 @@ test.describe("public page", () => {
     await visitor.close();
   });
 
-  test("shows the product counters in Settings to the configured admin only", async ({ page }) => {
+  test("admin master: switches to the admin view, sees the overview, the accounts and one account's activity", async ({ page }) => {
     await signIn(page);
-    await page.goto("/app/settings");
-    const counters = page.getByTestId("product-counters");
-    await expect(counters).toBeVisible();
-    await expect(counters).toContainText("Login page views");
-    await expect(counters).toContainText("Analyses");
-    // The service answers 404 to anyone else.
-    const res = await page.request.get("/api/funnel", { headers: { authorization: "Bearer not-admin" } });
-    expect(res.status()).toBe(401);
+    await analyze(page, "https://github.com/acme/vibe");
+    await expect(page).toHaveURL(/\/r\/mem-/, { timeout: 30_000 });
+    await page.goto("/app/dashboard");
+    // The switch exists for the configured admin only (e2e-user); User is the plain workspace.
+    const view = page.getByRole("radiogroup", { name: "Workspace view" });
+    await expect(view).toBeVisible();
+    await expect(view.getByRole("radio", { name: "User" })).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByRole("navigation", { name: "Workspace" }).getByRole("link", { name: "Overview" })).toHaveCount(0);
+    await view.getByRole("radio", { name: "Admin" }).click();
+    await expect(page).toHaveURL(/\/app\/admin$/);
+    const overview = page.getByTestId("admin-overview");
+    await expect(overview).toBeVisible();
+    await expect(overview).toContainText("Accounts");
+    await expect(overview).toContainText("Login page views");
+    await page.getByRole("navigation", { name: "Workspace" }).getByRole("link", { name: "Accounts" }).click();
+    const accounts = page.getByTestId("admin-accounts");
+    await expect(accounts).toBeVisible();
+    await accounts.getByRole("link", { name: "@e2e-user" }).click();
+    const account = page.getByTestId("admin-account");
+    await expect(account).toBeVisible();
+    await expect(account).toContainText("acme/vibe");
+    await expect(account).not.toContainText("GSK-");
+    // Back to the user view: the plain sidebar again.
+    await page.getByRole("radiogroup", { name: "Workspace view" }).getByRole("radio", { name: "User" }).click();
+    await expect(page).toHaveURL(/\/app\/dashboard$/);
+    await expect(page.getByRole("navigation", { name: "Workspace" }).getByRole("link", { name: "Scans" })).toBeVisible();
+    // The service answers nobody else.
+    expect((await page.request.get("/api/admin/overview", { headers: { authorization: "Bearer not-admin" } })).status()).toBe(401);
+  });
+
+  test("tells an open workspace about a newer version and offers to reload", async ({ page }) => {
+    await signIn(page);
+    await page.goto("/app/dashboard");
+    await expect(page.getByTestId("update-banner")).toHaveCount(0);
+    // The stub service starts reporting a newer version; the page checks again when the tab regains focus.
+    await page.request.post("/api/dev/version", { data: { version: "99.0.0" } });
+    await page.evaluate("window.dispatchEvent(new Event('focus'))");
+    const banner = page.getByTestId("update-banner");
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText("updated to 99.0.0");
+    await expect(banner.getByRole("button", { name: "Update" })).toBeVisible();
+    // "Later" closes the strip for this tab; the bell keeps one notification per version.
+    await banner.getByRole("button", { name: "Later" }).click();
+    await expect(page.getByTestId("update-banner")).toHaveCount(0);
+    await page.getByRole("button", { name: /Notifications/ }).click();
+    await expect(page.getByRole("list", { name: "Notifications" })).toContainText("Gateseeker 99.0.0 is running");
+    // Restore for the other tests.
+    await page.request.post("/api/dev/version", { data: { version: "0.0.1" } });
   });
 
   test("publishes one page per approved curated advisory", async ({ page }) => {
