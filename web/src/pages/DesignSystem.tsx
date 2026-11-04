@@ -1,4 +1,4 @@
-import { Avatar, Badge, Button, Card, Drawer, IconInput, Skeleton, Switch, Logo, LogoSymbol, MetricCard, Segmented, Table, Td, Th, cn, menuItemClass, navItemClass } from "@gateseeker/ui-kit";
+import { Avatar, Badge, Button, Card, Drawer, Dropdown, IconInput, Skeleton, Switch, Logo, LogoSymbol, MetricCard, Segmented, Table, Td, Th, cn, menuItemClass, navItemClass } from "@gateseeker/ui-kit";
 import { ArrowRight, ArrowUpDown, Bell, Download, ListChecks, LogOut, ScanSearch, Search } from "lucide-react";
 import { useCallback, useState, type ReactNode } from "react";
 
@@ -52,6 +52,7 @@ function Proposal() {
 export function DesignSystem() {
   const [filter, setFilter] = useState<"all" | "open" | "approved" | "resolved">("all");
   const [drawer, setDrawer] = useState(false);
+  const [view, setView] = useState<"user" | "admin">("user");
   const [sampleSwitch, setSampleSwitch] = useState(true);
   const closeDrawer = useCallback(() => { setDrawer(false); }, []);
 
@@ -137,6 +138,15 @@ export function DesignSystem() {
           <div className="flex flex-col gap-2 sm:flex-row">
             <IconInput icon={<Search />} aria-label="Sample field" placeholder="https://github.com/owner/repository" className="sm:flex-1" />
             <Button>Analyze <ArrowRight aria-hidden="true" /></Button>
+          </div>
+        </Card>
+      </Section>
+
+      <Section title="Dropdown" note="Single choice, drawn by the kit (not the system list): field-looking trigger with a strong border so it reads on the sidebar surface, options on the popover surface, the chosen one marked. Arrows, Enter, Escape and outside clicks work.">
+        <Card className="grid gap-3 bg-sidebar p-4">
+          <div className="grid max-w-[204px] gap-1">
+            <span className="text-label text-muted-foreground">View as (sample)</span>
+            <Dropdown label="View as (sample)" value={view} onChange={setView} options={[{ value: "user", label: "User" }, { value: "admin", label: "Admin" }]} />
           </div>
         </Card>
       </Section>

@@ -459,11 +459,12 @@ test.describe("public page", () => {
     // The "View as" dropdown exists for the configured admin only (e2e-user); User is the plain workspace.
     const view = page.getByRole("combobox", { name: "View as" });
     await expect(view).toBeVisible();
-    await expect(view).toHaveValue("user");
+    await expect(view).toHaveText("User");
     await expect(page.getByRole("navigation", { name: "Workspace" }).getByRole("link", { name: "Overview" })).toHaveCount(0);
-    await view.selectOption("admin");
+    await view.click();
+    await page.getByRole("option", { name: "Admin" }).click();
     await expect(page).toHaveURL(/\/app\/admin$/);
-    await expect(page.getByRole("combobox", { name: "View as" })).toHaveValue("admin");
+    await expect(page.getByRole("combobox", { name: "View as" })).toHaveText("Admin");
     const overview = page.getByTestId("admin-overview");
     await expect(overview).toBeVisible();
     await expect(overview).toContainText("Accounts");
@@ -477,7 +478,8 @@ test.describe("public page", () => {
     await expect(account).toContainText("acme/vibe");
     await expect(account).not.toContainText("GSK-");
     // Back to the user view: the plain sidebar again.
-    await page.getByRole("combobox", { name: "View as" }).selectOption("user");
+    await page.getByRole("combobox", { name: "View as" }).click();
+    await page.getByRole("option", { name: "User" }).click();
     await expect(page).toHaveURL(/\/app\/dashboard$/);
     await expect(page.getByRole("navigation", { name: "Workspace" }).getByRole("link", { name: "Scans" })).toBeVisible();
     // The service answers nobody else.

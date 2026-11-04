@@ -1,4 +1,4 @@
-import { AppShell, Avatar, Button, Logo, Menu, Select, Skeleton, buttonVariants, menuItemClass, navItemClass } from "@gateseeker/ui-kit";
+import { AppShell, Avatar, Button, Dropdown, Logo, Menu, Skeleton, buttonVariants, menuItemClass, navItemClass } from "@gateseeker/ui-kit";
 import { ArrowLeft, Bell, BookOpen, ChevronUp, Gauge, History, LayoutDashboard, LogOut, Palette, ScanSearch, Settings, Users } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
@@ -105,16 +105,16 @@ export function Workspace({ page, loading = false, children }: { page: Workspace
 
   const modeSwitch = isAdmin === true && (
     <div className="grid gap-1 px-3 pb-3">
-      <label htmlFor="workspace-view" className="text-label text-muted-foreground">View as</label>
-      <Select
-        id="workspace-view"
-        className="h-9"
+      <span className="text-label text-muted-foreground" aria-hidden="true">View as</span>
+      <Dropdown
+        label="View as"
         value={adminMode ? "admin" : "user"}
-        onChange={(e) => { navigate(e.target.value === "admin" ? "/app/admin" : "/app/dashboard"); }}
-      >
-        <option value="user">User</option>
-        <option value="admin">Admin</option>
-      </Select>
+        options={[
+          { value: "user", label: "User" },
+          { value: "admin", label: "Admin" },
+        ]}
+        onChange={(v) => { navigate(v === "admin" ? "/app/admin" : "/app/dashboard"); }}
+      />
     </div>
   );
 
