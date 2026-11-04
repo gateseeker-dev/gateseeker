@@ -24,6 +24,10 @@ import {
  * One function instead of one file per route because the Hobby plan allows
  * twelve functions per deployment and the API has more routes than that;
  * the routing mirrors src/web/local-server.ts, which the browser tests cover.
+ * web/vercel.json rewrites every /api path here (a catch-all file name such
+ * as api/[...path].ts only matched one segment under the Vite preset: nested
+ * paths like /api/admin/overview got the platform's 404). The function still
+ * sees the original URL, so the routing below is by full path.
  * The longest jobs (feed publish, daily monitor) set the duration for all.
  */
 export const config = { maxDuration: 300 };

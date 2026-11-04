@@ -2,7 +2,7 @@ import { Badge, Button, Card, MetricCard, Table, Td, Th } from "@gateseeker/ui-k
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { fetchAdminAccount, fetchAdminAccounts, fetchAdminOverview, type AdminAccountResponse, type AdminAccountsResponse, type AdminOverviewResponse } from "../api";
+import { fetchAdminAccount, fetchAdminAccounts, fetchAdminOverview, type AdminAccountResponse, type AdminAccountsResponse, type AdminOverviewResponse, type ScanResponseError } from "../api";
 import { useAuth } from "../auth-context";
 import { ScanTable } from "../components/ScanTable";
 import { PageSkeleton } from "../components/Skeletons";
@@ -47,6 +47,22 @@ function NotAdmin() {
   );
 }
 
+/** Any failure other than the 404 given to non-admins: the message, so the cause is visible. */
+function Failed({ message }: { message: string }) {
+  return (
+    <Card className="grid gap-2 p-4" role="alert" data-testid="admin-failed">
+      <h1 className="text-title font-medium">The service did not answer</h1>
+      <p className="text-label text-muted-foreground">{message}</p>
+    </Card>
+  );
+}
+
+type Denied = "denied" | { failed: string };
+
+function deniedOrFailed(err: ScanResponseError): Denied {
+  return err.error.code === "not-found" ? "denied" : { failed: err.error.message };
+}
+
 function useSession() {
   const auth = useAuth();
   useEffect(() => {
@@ -57,16 +73,17 @@ function useSession() {
 
 export function AdminOverviewPage() {
   const session = useSession();
-  const [data, setData] = useState<AdminOverviewResponse | null | "denied">(null);
+  const [data, setData] = useState<AdminOverviewResponse | null | Denied>(null);
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
-    void fetchAdminOverview(session.accessToken).then((out) => { if (!cancelled) setData(out.ok ? out : "denied"); });
+    void fetchAdminOverview(session.accessToken).then((out) => { if (!cancelled) setData(out.ok ? out : deniedOrFailed(out)); });
     return () => { cancelled = true; };
   }, [session]);
 
   if (!session || data === null) return <PageSkeleton label="Loading the overview" />;
   if (data === "denied") return <NotAdmin />;
+  if ("failed" in data) return <Failed message={data.failed} />;
   const o = data.overview;
   const totals = new Map<string, number>();
   for (const e of data.funnel.events) totals.set(e.kind, (totals.get(e.kind) ?? 0) + e.count);
@@ -118,7 +135,7 @@ export function AdminOverviewPage() {
 export function AdminAccountsPage() {
   const session = useSession();
   const [pages, setPages] = useState<AdminAccountsResponse[]>([]);
-  const [denied, setDenied] = useState(false);
+  const [denied, setDenied] = useState<Denied | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function load(before: string | null) {
@@ -127,7 +144,7 @@ export function AdminAccountsPage() {
     const out = await fetchAdminAccounts(session.accessToken, before);
     setBusy(false);
     if (out.ok) setPages((p) => [...p, out]);
-    else setDenied(true);
+    else setDenied(deniedOrFailed(out));
   }
   useEffect(() => {
     setPages([]);
@@ -135,8 +152,9 @@ export function AdminAccountsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load the first page once per session
   }, [session]);
 
-  if (!session || (pages.length === 0 && !denied)) return <PageSkeleton label="Loading the accounts" />;
-  if (denied) return <NotAdmin />;
+  if (!session || (pages.length === 0 && denied === null)) return <PageSkeleton label="Loading the accounts" />;
+  if (denied === "denied") return <NotAdmin />;
+  if (denied !== null) return <Failed message={denied.failed} />;
   const rows = pages.flatMap((p) => p.accounts);
   const next = pages[pages.length - 1]?.next ?? null;
   const now = Date.now();
@@ -182,7 +200,7 @@ export function AdminAccountsPage() {
 
 export function AdminAccountPage({ id }: { id: string }) {
   const session = useSession();
-  const [data, setData] = useState<AdminAccountResponse | null | "denied" | "missing">(null);
+  const [data, setData] = useState<AdminAccountResponse | null | Denied | "missing">(null);
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
@@ -190,14 +208,15 @@ export function AdminAccountPage({ id }: { id: string }) {
     void fetchAdminAccount(session.accessToken, id).then((out) => {
       if (cancelled) return;
       if (out.ok) setData(out);
-      else setData(out.error.message.startsWith("No account") ? "missing" : "denied");
+      else setData(out.error.message.startsWith("No account") ? "missing" : deniedOrFailed(out));
     });
     return () => { cancelled = true; };
   }, [session, id]);
-  useWorkspaceTitle(data !== null && typeof data === "object" ? `@${data.account.login}` : null);
+  useWorkspaceTitle(data !== null && typeof data === "object" && "account" in data ? `@${data.account.login}` : null);
 
   if (!session || data === null) return <PageSkeleton label="Loading the account" />;
   if (data === "denied") return <NotAdmin />;
+  if (data !== "missing" && "failed" in data) return <Failed message={data.failed} />;
   if (data === "missing") {
     return (
       <Card className="grid gap-2 p-4" role="alert">

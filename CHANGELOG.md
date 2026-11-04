@@ -9,6 +9,7 @@ First stable version: `npm install gateseeker` now gets this one (`latest`), and
 - Admin master: an admin area (`/app/admin`) with accounts, last access and activity, and a User/Admin switch in the sidebar for the configured admin logins.
 - Update notice: open workspaces learn about a new version within minutes and offer to reload; the CLI and the Action say when a newer version exists.
 - Live example on the Home without signing in, shareable report links (`/p/<id>`), one public page per curated advisory, sharing image and README badge.
+- Hosting fix (2026-11-04, same version): on Vercel the nested API paths (shared report links, the admin area, the daily jobs) were answered by the platform's 404 instead of the service. Every `/api` path is now routed to the one function explicitly.
 
 ## 1.0.0-beta.7 (2026-10-28)
 
