@@ -24,7 +24,7 @@ function status(n: WorkspaceNotification): keyof typeof ICON {
 }
 
 function headline(n: WorkspaceNotification): string {
-  if (n.kind === "update") return `${n.subject} is running`;
+  if (n.kind === "update") return n.subject.endsWith("updated") ? n.subject : `${n.subject} is running`;
   if (n.kind === "refused") return "Analysis refused";
   if (status(n) === "incomplete") return "Analysis incomplete";
   if (n.p1 + n.p2 === 0) return "Analysis finished: no P1 or P2 findings";

@@ -44,8 +44,9 @@ const host = "127.0.0.1";
 const MAX_BODY = 4096;
 
 const options = handlerOptionsFromEnv({ env: process.env });
-/** Stub mode only: POST /api/dev/version {version} makes /api/config report another version, for the update-notice test. */
+/** Stub mode only: POST /api/dev/version {version, build} makes /api/config report another version or deploy id, for the update-notice tests. */
 let reportedVersion: string = GATESEEKER_VERSION;
+let reportedBuild: string | null = process.env.VERCEL_GIT_COMMIT_SHA ?? null;
 const authConfig = authConfigFromEnv(process.env);
 const exampleRepo = exampleRepoFromEnv(process.env);
 
@@ -112,7 +113,7 @@ const server = createServer((req, res) => {
   const authorization = req.headers.authorization ?? null;
 
   if (url.pathname === "/api/config") {
-    json(res, 200, { ok: true, auth: authConfig, exampleRepo, version: reportedVersion, githubApp: options.githubApp !== undefined });
+    json(res, 200, { ok: true, auth: authConfig, exampleRepo, version: reportedVersion, build: reportedBuild, githubApp: options.githubApp !== undefined });
     return;
   }
   if (url.pathname === "/api/scan") {
@@ -201,12 +202,13 @@ const server = createServer((req, res) => {
   if (url.pathname === "/api/dev/version" && authConfig.mode === "stub" && req.method === "POST") {
     void readBody(req).then((raw) => {
       try {
-        const v = (JSON.parse(raw ?? "") as { version?: unknown }).version;
-        if (typeof v === "string" && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(v)) reportedVersion = v;
+        const body = JSON.parse(raw ?? "") as { version?: unknown; build?: unknown };
+        if (typeof body.version === "string" && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(body.version)) reportedVersion = body.version;
+        if (typeof body.build === "string" && /^[0-9a-f]{0,40}$/.test(body.build)) reportedBuild = body.build || null;
       } catch {
         /* ignored */
       }
-      json(res, 200, { ok: true, version: reportedVersion });
+      json(res, 200, { ok: true, version: reportedVersion, build: reportedBuild });
     });
     return;
   }

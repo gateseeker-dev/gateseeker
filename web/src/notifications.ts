@@ -105,11 +105,12 @@ export function notify(user: string, entry: Omit<WorkspaceNotification, "id" | "
 }
 
 /** One "Gateseeker was updated" notification per version; preferences do not silence it. */
-export function notifyUpdate(user: string, version: string): void {
-  const subject = `Gateseeker ${version}`;
+/** `version` is null for another deploy of the same version: one such notification at a time, replaced by the next. */
+export function notifyUpdate(user: string, version: string | null): void {
+  const subject = version ? `Gateseeker ${version}` : "Gateseeker was updated";
   const existing = readNotifications(user);
   if (existing.some((n) => n.kind === "update" && n.subject === subject)) return;
-  const item: WorkspaceNotification = { id: `update-${version}`, kind: "update", subject, verdict: null, p1: 0, p2: 0, reportId: null, message: "A new version is running. Reload the page to use it; see what changed in the changelog.", at: new Date().toISOString(), read: false };
+  const item: WorkspaceNotification = { id: `update-${version ?? "deploy"}`, kind: "update", subject, verdict: null, p1: 0, p2: 0, reportId: null, message: version ? "A new version is running. Reload the page to use it; see what changed in the changelog." : "A new build of the site is running. Reload the page to use it.", at: new Date().toISOString(), read: false };
   writeJson(listKey(user), [item, ...existing].slice(0, MAX));
 }
 

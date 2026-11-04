@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 
+/** The version the page is built with (the update-notice tests compare against it). */
+const PAGE_VERSION = (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }).version;
+
 /**
  * Browser tests for the public page, against the stub GitHub/OSV started by
  * e2e/start-web.mjs with the stub sign-in (GATESEEKER_AUTH_STUB=1) and a
@@ -550,6 +553,20 @@ test.describe("public page", () => {
     await expect(page.getByRole("list", { name: "Notifications" })).toContainText("Gateseeker 99.0.0 is running");
     // Restore for the other tests.
     await page.request.post("/api/dev/version", { data: { version: "0.0.1" } });
+  });
+
+  test("tells an open workspace about another deploy of the same version", async ({ page }) => {
+    await signIn(page);
+    await page.goto("/app/dashboard");
+    await expect(page.getByTestId("update-banner")).toHaveCount(0);
+    // Same version as the page, another deploy id (the page's is a per-build id; the stub reported none so far).
+    await page.request.post("/api/dev/version", { data: { version: PAGE_VERSION, build: "bbbb2222" } });
+    await page.evaluate("window.dispatchEvent(new Event('focus'))");
+    const banner = page.getByTestId("update-banner");
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText("Gateseeker was updated.");
+    await expect(banner).not.toContainText("updated to");
+    await page.request.post("/api/dev/version", { data: { version: "0.0.1", build: "" } });
   });
 
   test("publishes one page per approved curated advisory", async ({ page }) => {

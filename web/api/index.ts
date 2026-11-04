@@ -68,7 +68,8 @@ async function route(req: Request): Promise<Response> {
 
   if (path === "/api/config") {
     if (method !== "GET") return refuse(405, "GET only.", "GET");
-    return Response.json({ ok: true, auth: authConfigFromEnv(process.env), exampleRepo: exampleRepoFromEnv(process.env), version: GATESEEKER_VERSION, githubApp: options.githubApp !== undefined }, { headers: { "cache-control": "no-store" } });
+    // `build` is the deploy's commit: the page compares it with its own so a site deploy without a version bump still shows the update notice.
+    return Response.json({ ok: true, auth: authConfigFromEnv(process.env), exampleRepo: exampleRepoFromEnv(process.env), version: GATESEEKER_VERSION, build: process.env.VERCEL_GIT_COMMIT_SHA ?? null, githubApp: options.githubApp !== undefined }, { headers: { "cache-control": "no-store" } });
   }
   if (path === "/api/scan") {
     if (method !== "POST") return refuse(405, "POST only.", "POST");
