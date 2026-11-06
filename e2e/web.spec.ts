@@ -79,6 +79,14 @@ test.describe("public page", () => {
     await expect(page.getByText(/in your Scans until/)).toBeVisible();
     await expect(page.locator("#ci")).toContainText("Add this workflow to acme/vibe");
 
+    // Coming back to the tab re-announces the same session: the report stays, nothing is fetched again (no skeleton).
+    const reportCalls: string[] = [];
+    page.on("request", (r) => { if (r.url().includes("/api/reports/")) reportCalls.push(r.url()); });
+    await page.evaluate("window.dispatchEvent(new Event('focus'))");
+    await expect(page.getByRole("region", { name: "Report" })).toBeVisible();
+    await page.waitForTimeout(300);
+    expect(reportCalls).toEqual([]);
+
     // The saved report opens again by its id; the note was for the first visit only.
     await page.reload();
     await expect(page.getByRole("region", { name: "Report" })).toBeVisible();

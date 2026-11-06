@@ -118,6 +118,9 @@ function stubAuth(token: string): AuthClient {
     }
   };
   const emit = () => { const s = read(); for (const l of listeners) l(s); };
+  // Like Supabase Auth, announce the (unchanged) session again whenever the tab regains focus, so the page's
+  // handling of that re-announcement is exercised by the browser tests.
+  window.addEventListener("focus", emit);
   return {
     mode: "stub",
     getSession: () => Promise.resolve(read()),

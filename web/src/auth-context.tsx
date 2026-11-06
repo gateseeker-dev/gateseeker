@@ -23,6 +23,12 @@ export interface AuthState {
 
 const AuthContext = createContext<AuthState>({ status: "loading", mode: "none", session: null, signIn: () => Promise.resolve(), signOut: () => Promise.resolve() });
 
+function sameSession(a: Session | null, b: Session | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.accessToken === b.accessToken && a.user.id === b.user.id && a.user.login === b.user.login && a.user.avatarUrl === b.user.avatarUrl;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [client, setClient] = useState<AuthClient | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -38,7 +44,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setClient(c);
       setSession(s);
       setReady(true);
-      unsubscribe = c.onChange((next) => { setSession(next); });
+      // The provider announces the session again whenever the tab regains focus (it re-checks it), with a fresh object
+      // each time. Only a real change replaces the state, or every effect keyed on the session would refetch and show
+      // skeletons at each tab switch.
+      unsubscribe = c.onChange((next) => { setSession((prev) => (sameSession(prev, next) ? prev : next)); });
     });
     return () => {
       cancelled = true;
