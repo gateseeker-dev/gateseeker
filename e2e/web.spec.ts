@@ -552,6 +552,9 @@ test.describe("public page", () => {
     await page.evaluate("window.dispatchEvent(new Event('focus'))");
     const banner = page.getByTestId("update-banner");
     await expect(banner).toBeVisible();
+    // A toast at the top of the window, in view even on a long page, not a strip after the content.
+    await expect(banner).toBeInViewport();
+    expect((await banner.boundingBox())?.y ?? 999).toBeLessThan(120);
     await expect(banner).toContainText("updated to 99.0.0");
     await expect(banner.getByRole("button", { name: "Update" })).toBeVisible();
     // "Later" closes the strip for this tab; the bell keeps one notification per version.

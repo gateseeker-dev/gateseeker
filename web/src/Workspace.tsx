@@ -183,9 +183,9 @@ export function Workspace({ page, loading = false, children }: { page: Workspace
   return (
     <TitleContext.Provider value={setCustomTitle}>
     <AppShell brand={<Link href="/app/dashboard" aria-label="GateSeeker workspace" className="flex items-center"><Logo label="GateSeeker" /></Link>} title={title} actions={actions} nav={nav} account={account}>
+      {update.latest && <UpdateBanner version={update.latest.version} onReload={update.reload} onLater={update.dismiss} />}
       {children}
       <NotificationsPanel open={panel} onClose={closePanel} items={notifications.items} onMarkAllRead={notifications.markAllRead} />
-      {update.latest && <UpdateBanner version={update.latest.version} onReload={update.reload} onLater={update.dismiss} />}
     </AppShell>
     </TitleContext.Provider>
   );
