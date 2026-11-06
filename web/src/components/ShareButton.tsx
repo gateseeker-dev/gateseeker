@@ -1,4 +1,4 @@
-import { Button } from "@gateseeker/ui-kit";
+import { Button, cn } from "@gateseeker/ui-kit";
 import { Check, Copy, Link2, Link2Off, Loader2 } from "lucide-react";
 import { useState } from "react";
 
@@ -40,18 +40,20 @@ export function ShareButton({ id, initial, token, isPrivate = false }: { id: str
 
   return (
     <div className="flex flex-wrap items-center gap-2" data-testid="share">
-      <Button variant="outline" size="sm" disabled={busy} onClick={() => void toggle()} aria-pressed={shared}>
-        {busy ? <Loader2 className="animate-spin" aria-hidden="true" /> : shared ? <Link2Off aria-hidden="true" /> : <Link2 aria-hidden="true" />}
-        {shared ? "Stop sharing" : "Share a link"}
-      </Button>
-      {shared && (
-        <>
-          <code className="max-w-[16rem] truncate rounded border bg-input px-2 py-1 text-xs" title={link}>{link}</code>
-          <Button variant="ghost" size="sm" onClick={() => void copy()} aria-label="Copy the public link">
-            {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />} {copied ? "Copied" : "Copy"}
-          </Button>
-        </>
-      )}
+      <div className="inline-flex items-stretch">
+        <Button variant="outline" size="sm" disabled={busy} onClick={() => void toggle()} aria-pressed={shared} className={cn(shared && "rounded-r-none border-r-0")}>
+          {busy ? <Loader2 className="animate-spin" aria-hidden="true" /> : shared ? <Link2Off aria-hidden="true" /> : <Link2 aria-hidden="true" />}
+          {shared ? "Stop sharing" : "Share a link"}
+        </Button>
+        {shared && (
+          <span className="inline-flex h-8 items-center gap-1 rounded-r-md border border-button-stroke bg-input pl-2.5 pr-1 shadow-solid [--shadow-color:var(--button-stroke)]">
+            <code className="max-w-[14rem] truncate text-xs text-muted-foreground" title={link}>{link}</code>
+            <button type="button" onClick={() => void copy()} aria-label={copied ? "Copied" : "Copy the public link"} title={copied ? "Copied" : "Copy the public link"} className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              {copied ? <Check className="size-3.5 text-success" aria-hidden="true" /> : <Copy className="size-3.5" aria-hidden="true" />}
+            </button>
+          </span>
+        )}
+      </div>
       {error && <span role="alert" className="text-xs text-destructive">{error}</span>}
     </div>
   );

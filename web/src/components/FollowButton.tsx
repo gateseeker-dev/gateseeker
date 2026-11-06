@@ -17,7 +17,7 @@ export function FollowButton({ owner, repo, token }: { owner: string; repo: stri
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Button
-        variant={on ? "outline" : "default"}
+        variant="outline"
         size="sm"
         aria-pressed={on}
         disabled={busy}

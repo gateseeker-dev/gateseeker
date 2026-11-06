@@ -34,7 +34,8 @@ import { FixGuidance } from "../components/FixGuidance";
  */
 
 const PRIORITIES = ["P1", "P2", "P3", "P4"] as const;
-type Filter = "all" | (typeof PRIORITIES)[number];
+type Priority = (typeof PRIORITIES)[number];
+type Filter = "all" | Priority;
 type Sort = "priority" | "severity";
 const SEVERITY_RANK: Record<string, number> = { CRITICAL: 0, HIGH: 1, MODERATE: 2, MEDIUM: 2, LOW: 3 };
 
@@ -140,6 +141,30 @@ function groupFindings(ordered: Finding[]): Group[] {
   return [...groups.values()];
 }
 
+/* The four priorities as one bar, widths proportional to the counts: the same numbers as the cards below, read at a glance. */
+const BAR_TONE: Record<Priority, string> = { P1: "bg-destructive", P2: "bg-warning", P3: "bg-severity-moderate", P4: "bg-muted-foreground/60" };
+
+function PriorityBar({ counts, total }: { counts: Record<Priority, number>; total: number }) {
+  const label = PRIORITIES.map((pr) => `${pr} ${String(counts[pr])}`).join(", ");
+  return (
+    <div className="grid gap-1.5" data-testid="priority-bar">
+      <div className="flex h-2 w-full overflow-hidden rounded-full bg-chip" role="img" aria-label={`Findings by priority: ${label}`} title={label}>
+        {PRIORITIES.filter((pr) => counts[pr] > 0).map((pr) => (
+          <span key={pr} className={cn("h-full", BAR_TONE[pr])} style={{ width: `${String((counts[pr] / total) * 100)}%` }} />
+        ))}
+      </div>
+      <p className="flex flex-wrap gap-x-3 text-caption text-muted-foreground" aria-hidden="true">
+        {PRIORITIES.map((pr) => (
+          <span key={pr} className="inline-flex items-center gap-1">
+            <span className={cn("inline-block size-2 rounded-full", BAR_TONE[pr])} />
+            {pr} {counts[pr]}
+          </span>
+        ))}
+      </p>
+    </div>
+  );
+}
+
 function Headline({ response, elapsedMs, printing }: { response: ScanResponseOk; elapsedMs: number; printing: boolean }) {
   const { report, repository, archive } = response;
   const verdict = report.gate.verdict;
@@ -172,14 +197,20 @@ function Headline({ response, elapsedMs, printing }: { response: ScanResponseOk;
     report.analyses.patterns === "analyzed" && report.patterns ? plural(report.patterns.filesScanned, "file", "files") : null,
   ].filter(Boolean);
 
+  const total = p.P1 + p.P2 + p.P3 + p.P4;
   return (
-    <Card className="grid gap-2 p-4">
-      <p className="flex flex-wrap items-center gap-2 text-title font-medium">
-        <Icon className={cn("size-5", tone)} aria-hidden="true" />
-        <span className={tone} data-testid="headline">{title}</span>
-        <span className="font-mono text-label font-normal text-muted-foreground">{slug}</span>
-        {repository.isPrivate && <Badge variant="kind" title="Read through your GitHub authorization; the report opens only for your account" data-testid="private-badge">private</Badge>}
-      </p>
+    <Card className="grid gap-3 p-4">
+      <div className="grid gap-1">
+        <p className="flex flex-wrap items-center gap-2.5 text-display font-medium leading-tight">
+          <Icon className={cn("size-7 shrink-0", tone)} aria-hidden="true" />
+          <span className={tone} data-testid="headline">{title}</span>
+        </p>
+        <p className="flex flex-wrap items-center gap-2 pl-[38px]">
+          <span className="font-mono text-label text-muted-foreground">{slug}</span>
+          {repository.isPrivate && <Badge variant="kind" title="Read through your GitHub authorization; the report opens only for your account" data-testid="private-badge">private</Badge>}
+        </p>
+      </div>
+      {total > 0 && <PriorityBar counts={p} total={total} />}
       <p className="text-body" data-testid="gate-line">{gate}</p>
       {verdict === "incomplete" && urgent > 0 && <p className="text-body text-warning">Some checks could not run, so this result is incomplete. See Technical details.</p>}
       <p className="text-label text-muted-foreground">
