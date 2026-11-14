@@ -8,9 +8,10 @@ import { PRIORITY_LABEL } from "./labels.js";
  */
 
 const cc = (code: number): string => String.fromCharCode(code);
-// C0 controls except TAB/LF/CR, DEL, C1 controls, and the Unicode line/paragraph separators.
+// C0 controls except TAB/LF/CR, DEL, C1 controls, the Unicode line/paragraph separators, and the bidirectional
+// overrides and isolates that can make text read differently from what it is (Trojan Source).
 const CONTROL_CHARS = new RegExp(
-  `[${cc(0)}-${cc(8)}${cc(11)}-${cc(31)}${cc(127)}-${cc(159)}${cc(0x2028)}${cc(0x2029)}]`,
+  `[${cc(0)}-${cc(8)}${cc(11)}-${cc(31)}${cc(127)}-${cc(159)}${cc(0x2028)}${cc(0x2029)}${cc(0x202a)}-${cc(0x202e)}${cc(0x2066)}-${cc(0x2069)}]`,
   "g",
 );
 

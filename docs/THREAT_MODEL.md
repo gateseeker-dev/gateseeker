@@ -173,6 +173,25 @@ Residual: Gateseeker trusts TLS and OSV itself.
 | The configuration we recommend is itself risky (unpinned MCP package, hook that downloads code) | The snippets live in `src/agent-snippets.ts`; a test writes them into a project and scans it with GSK-AGENT-002/003: no finding, and an unpinned variant is caught. | `agent-integration.test.ts` "does not trip our own agent rules" |
 | Visit-source counters identify visitors | Only one word from a closed list is sent (from our `?ref=` or the referrer's host), once per tab; stored as a daily aggregate like every counter; documented in the privacy notice. | `agent-integration.test.ts` "maps our ?ref= and the referrer's host to a closed list …"; e2e "counts where a signed-out visit came from …" |
 
+### 13. Security review before launch (2026-11-14)
+
+Three code reviews (authorization, input handling, secrets/CI) and non-destructive tests against the live site. Fixed:
+
+| Threat | Mitigation | Test |
+|---|---|---|
+| A signed-in user binds another account's (or an organization's) GitHub App installation by sending its id, then reads that account's private repositories | An installation binds only when it is on the person's own GitHub user (verified login); organizations wait for a check of the person's rights on GitHub (OAuth during install, not built yet). The check is repeated when a token is minted; bindings made before the fix are deleted by `20261114000000_installations_recheck.sql`. | `web-private.test.ts` "refuses someone else's installation, an organization's …", "does not use a binding of someone else's installation that is already stored …" |
+| A user claims an admin's login by rewriting their Supabase `user_metadata` | The login comes only from the GitHub identity Supabase records at sign-in (`identities[].identity_data`), which users cannot edit; without one there is no login. | `web-handler.test.ts` "asks Supabase who the token belongs to and reads the GitHub login", "treats 401, malformed bodies …" |
+| A crafted `.gitignore` in an analyzed repository hangs the scan (catastrophic regex backtracking) or throws (`[z-a]`) | The matcher no longer builds regular expressions: one pass per token over the path, malformed classes match nothing, long lines and very long files are capped. | `gitignore.test.ts` |
+| One repository that makes a rescan throw stops the daily monitor for everyone, every day | Each follow runs inside its own try/catch; a crash counts as a failure and the follow moves back in the queue. | `web-handler.test.ts` "counts a follow that makes the rescan throw as failed …" |
+| A fork pull request named `intel/…` stalls the feed collector | Only same-repository branches are continued. | By construction (`intel.yml`) |
+| The Action's `version` input becomes shell code | Validated as a version number before use. | By construction (`action.yml`) |
+| Cron secret guessed through response timing | Compared with `timingSafeEqual` on SHA-256 digests. | By construction |
+| Bidirectional-override characters make report text read differently | `sanitize()` removes U+202A–202E and U+2066–2069. | `gitignore.test.ts` "sanitize …" |
+
+Verified sound on the live site: every authenticated route answers 401 without a session; the public Supabase key reads nothing from any table and cannot call any function; `?next=` accepts only internal paths; oversized bodies, unknown event kinds and unsigned feed sets are refused; security headers (CSP without inline scripts, HSTS, frame-ancestors none, nosniff) are set. No real secret in the git history; `pnpm audit --prod` clean.
+
+Open (lower risk, scheduled): a commit that exists only in a fork can be analyzed under the parent repository's name (GitHub serves fork-network commits through the parent URL); third-party actions pinned by tag rather than commit; feed titles can close the code fence in intel PR bodies (Markdown only, never a shell); organization installations of the GitHub App need the OAuth check before they work again.
+
 ## Residual risks
 
 - A dependency that is vulnerable but not yet in OSV yields `no-known-vulnerabilities`.

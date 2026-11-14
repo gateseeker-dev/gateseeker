@@ -48,7 +48,8 @@ jobs:
           set -euo pipefail
           git config user.name "gateseeker-intel[bot]"
           git config user.email "gateseeker-intel@users.noreply.github.com"
-          BRANCH="$(gh pr list --state open --json headRefName --jq '[.[] | select(.headRefName | startswith("intel/")) | .headRefName] | sort | .[0] // ""')"
+          # Only this repository's own branches: a pull request from a fork named intel/... must not hijack or stall the queue.
+          BRANCH="$(gh pr list --state open --json headRefName,isCrossRepository --jq '[.[] | select(.isCrossRepository == false and (.headRefName | startswith("intel/"))) | .headRefName] | sort | .[0] // ""')"
           echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
           if [ -z "${BRANCH}" ]; then exit 0; fi
           git fetch origin "${BRANCH}"

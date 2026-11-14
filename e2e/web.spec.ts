@@ -524,13 +524,13 @@ test.describe("public page", () => {
 
   test("private repository: authorizes the App on GitHub, the analysis resumes, Settings lists and disconnects", async ({ page }) => {
     await signIn(page);
-    await analyze(page, "https://github.com/acme/secret");
+    await analyze(page, "https://github.com/e2e-user/secret");
     const refusal = page.getByRole("alert");
     await expect(refusal).toContainText("This repository is private");
     await expect(refusal).toContainText("allow Gateseeker to read it on GitHub");
     // GitHub's screen (the stub) sends the browser back with the installation; the page binds it and resumes the analysis.
     await page.getByTestId("allow-access").click();
-    await expect(page.getByTestId("github-setup-done")).toContainText("Connected to @acme");
+    await expect(page.getByTestId("github-setup-done")).toContainText("Connected to @e2e-user");
     await expect(page).toHaveURL(/\/r\/mem-/, { timeout: 30_000 });
     await expect(page.getByTestId("private-badge")).toBeVisible();
     await expect(page.getByTestId("headline")).toBeVisible();
@@ -539,14 +539,14 @@ test.describe("public page", () => {
     // Settings: the installation, how many repositories it covers, the link to GitHub, and Disconnect.
     await page.goto("/app/settings");
     const access = page.getByTestId("github-access");
-    await expect(access).toContainText("@acme");
+    await expect(access).toContainText("@e2e-user");
     await expect(access).toContainText("1 repository");
-    await expect(access.getByRole("link", { name: /Manage on GitHub/ })).toHaveAttribute("href", "http://127.0.0.1:4322/organizations/acme/settings/installations/77");
-    await access.getByRole("button", { name: "Disconnect @acme" }).click();
+    await expect(access.getByRole("link", { name: /Manage on GitHub/ })).toHaveAttribute("href", "http://127.0.0.1:4322/settings/installations/77");
+    await access.getByRole("button", { name: "Disconnect @e2e-user" }).click();
     await expect(page.getByTestId("github-access-empty")).toBeVisible();
     // Disconnected: the same repository asks for the authorization again.
     await page.goto("/app");
-    await analyze(page, "https://github.com/acme/secret");
+    await analyze(page, "https://github.com/e2e-user/secret");
     await expect(page.getByTestId("allow-access")).toBeVisible();
   });
 

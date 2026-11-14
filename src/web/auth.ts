@@ -11,7 +11,13 @@ import { z } from "zod";
 
 export interface AuthUser {
   id: string;
-  /** GitHub login when the provider gives one; display only, untrusted. */
+  /**
+   * GitHub login, read from the GitHub identity Supabase records at sign-in
+   * (`identities[].identity_data`), which the user cannot edit. Never from
+   * `user_metadata`: any signed-in user can rewrite that with their own
+   * session, so it would let anyone claim an admin's login (security review
+   * 2026-11-14). Used for authorization (admin logins, GitHub App account).
+   */
   login: string | null;
 }
 
@@ -22,7 +28,10 @@ export interface AuthVerifier {
 
 const userSchema = z.looseObject({
   id: z.string().min(1),
-  user_metadata: z.looseObject({ user_name: z.string().optional(), preferred_username: z.string().optional() }).optional(),
+  identities: z
+    .array(z.looseObject({ provider: z.string(), identity_data: z.looseObject({ user_name: z.string().optional(), preferred_username: z.string().optional() }).nullable().optional() }))
+    .nullable()
+    .optional(),
 });
 
 export interface SupabaseAuthOptions {
@@ -48,8 +57,8 @@ export function createSupabaseAuth(options: SupabaseAuthOptions): AuthVerifier {
         if (res.status !== 200) return null;
         const parsed = userSchema.safeParse(await res.json());
         if (!parsed.success) return null;
-        const meta = parsed.data.user_metadata;
-        const login = meta?.user_name ?? meta?.preferred_username ?? null;
+        const github = (parsed.data.identities ?? []).find((i) => i.provider === "github")?.identity_data;
+        const login = github?.user_name ?? github?.preferred_username ?? null;
         return { id: parsed.data.id, login: login !== null && /^[A-Za-z0-9-]{1,39}$/.test(login) ? login : null };
       } catch {
         return null;

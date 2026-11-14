@@ -1,3 +1,5 @@
+import { createHash, timingSafeEqual } from "node:crypto";
+
 import { z } from "zod";
 
 import { ADVISORY_SOURCE_NAME, advisorySetFromText, loadAdvisories, type AdvisorySet } from "../intel/advisories.js";
@@ -265,6 +267,14 @@ export function resetTouched(): void {
   touched.clear();
 }
 
+/** The cron secret, compared without leaking through timing how much of it was right. */
+function cronAuthorized(authorization: string | null | undefined, cronSecret: string | undefined): boolean {
+  const given = bearerToken(authorization);
+  if (!cronSecret || given === null) return false;
+  const digest = (v: string) => createHash("sha256").update(v).digest();
+  return timingSafeEqual(digest(given), digest(cronSecret));
+}
+
 function isAdmin(options: HandlerOptions, who: AuthUser): boolean {
   const admins = (options.adminLogins ?? []).map((x) => x.toLowerCase());
   return who.login !== null && admins.includes(who.login.toLowerCase());
@@ -306,7 +316,7 @@ export async function handleScanRequest(body: unknown, options: HandlerOptions, 
   if (!resolved.ok && PAUSING.has(resolved.error.code) && options.githubApp) {
     const target = parseGitHubRepoUrl(url);
     if (target.ok) {
-      const access = await privateAccess(options, store, who.id, target.value.owner, target.value.repo);
+      const access = await privateAccess(options, store, who.id, target.value.owner, target.value.repo, who.login);
       if (access.kind === "failed") return fail("upstream-error", access.message);
       if (access.kind === "none") return privateRefusal(options, who, target.value.owner, target.value.repo);
       installationTokenValue = access.token;
@@ -362,7 +372,19 @@ type PrivateAccess = { kind: "token"; token: string } | { kind: "none" } | { kin
  * installation for that owner or the installation does not cover the
  * repository: the caller then offers the install link.
  */
-async function privateAccess(options: HandlerOptions, store: ReportStore, userId: string, owner: string, repo: string): Promise<PrivateAccess> {
+/**
+ * Whether an installation may serve this account: only the App installed on
+ * the account's own GitHub user. An installation id alone proves nothing
+ * (anyone can send any id, and the App can read every installation), so an
+ * organization installation, or another user's, is refused until the install
+ * flow verifies the person's rights on GitHub (security review 2026-11-14).
+ */
+function ownInstallation(r: { accountLogin: string; accountType: "User" | "Organization" }, login: string | null): boolean {
+  return login !== null && r.accountType === "User" && r.accountLogin.toLowerCase() === login.toLowerCase();
+}
+
+/** `login` is the caller's verified GitHub login; the daily monitor has none and relies on the check made when the installation was bound (rows from before that check are removed by 20261114000000_installations_recheck.sql). */
+async function privateAccess(options: HandlerOptions, store: ReportStore, userId: string, owner: string, repo: string, login: string | null | { bound: true }): Promise<PrivateAccess> {
   const app = options.githubApp;
   if (!app) return { kind: "none" };
   let mine: InstallationRecord[];
@@ -371,7 +393,7 @@ async function privateAccess(options: HandlerOptions, store: ReportStore, userId
   } catch {
     return { kind: "failed", message: "The report store is unavailable. Try again in a minute." };
   }
-  const installation = mine.find((i) => i.accountLogin.toLowerCase() === owner.toLowerCase());
+  const installation = mine.find((i) => i.accountLogin.toLowerCase() === owner.toLowerCase() && (typeof login === "object" && login !== null ? i.accountType === "User" : ownInstallation(i, login)));
   if (!installation) return { kind: "none" };
   const t = await installationToken(app, installation.installationId, repo);
   if (t.ok) return { kind: "token", token: t.value.token };
@@ -434,6 +456,9 @@ export async function handleGitHubRequest(method: string, subpath: string, query
       if (!state.ok) return { status: 403, body: { ok: false, error: { code: "unauthorized", message: "This authorization link is not valid for your account, expired, or was already used. Start again from the repository." } } };
       const inst = await getInstallation(app, parsed.data.installationId);
       if (!inst.ok) return fail("upstream-error", inst.message);
+      if (!ownInstallation(inst.value, who.login)) {
+        return { status: 403, body: { ok: false, error: { code: "unauthorized", message: "For now Gateseeker can connect only the App installed on your own GitHub account, not on an organization or another account." } } };
+      }
       await store.addInstallation({ userId: who.id, installationId: inst.value.installationId, accountLogin: inst.value.accountLogin, accountType: inst.value.accountType });
       await count(store, "github_install_done");
       const record = (await store.listInstallations(who.id)).find((r) => r.installationId === inst.value.installationId);
@@ -721,7 +746,7 @@ export async function handleFunnelRequest(options: HandlerOptions, authorization
 
 /** Daily cleanup called by Vercel Cron with `Authorization: Bearer <CRON_SECRET>`. */
 export async function handleCleanupRequest(options: HandlerOptions, authorization: string | null | undefined, cronSecret: string | undefined): Promise<HttpResponse> {
-  if (!cronSecret || bearerToken(authorization) !== cronSecret) return fail("unauthorized", "Cron secret missing or wrong.");
+  if (!cronAuthorized(authorization, cronSecret)) return fail("unauthorized", "Cron secret missing or wrong.");
   const store = options.store;
   if (!store) return { status: 200, body: { ok: true, deleted: 0 } };
   try {
@@ -922,7 +947,7 @@ async function monitorOne(f: FollowRecord, options: HandlerOptions, store: Repor
   // A private repository the account authorized through the GitHub App is rescanned with a fresh installation token.
   let token: string | undefined;
   if (!resolved.ok && PAUSING.has(resolved.error.code) && options.githubApp) {
-    const access = await privateAccess(options, store, f.userId, f.owner, f.repo);
+    const access = await privateAccess(options, store, f.userId, f.owner, f.repo, { bound: true });
     if (access.kind === "failed") {
       await store.updateFollow(f.id, { failures: f.failures + 1, lastScanAt: at, queuedAt: null });
       return "failed";
@@ -992,7 +1017,7 @@ async function monitorOne(f: FollowRecord, options: HandlerOptions, store: Repor
  * (step 5) read the follow rows this writes.
  */
 export async function handleMonitorRequest(options: HandlerOptions & MonitorOptions, authorization: string | null | undefined, cronSecret: string | undefined): Promise<HttpResponse> {
-  if (!cronSecret || bearerToken(authorization) !== cronSecret) return fail("unauthorized", "Cron secret missing or wrong.");
+  if (!cronAuthorized(authorization, cronSecret)) return fail("unauthorized", "Cron secret missing or wrong.");
   const store = options.store;
   if (!store) return { status: 200, body: { ...EMPTY_MONITOR } };
   try {
@@ -1018,7 +1043,19 @@ async function runMonitor(options: HandlerOptions & MonitorOptions, store: Repor
       out.remaining = due.length - out.checked;
       break;
     }
-    const result = await monitorOne(f, options, store, now().toISOString());
+    // One repository that makes the engine throw must not stop the run for everyone else, nor stay first in the queue forever.
+    const at = now().toISOString();
+    let result: Awaited<ReturnType<typeof monitorOne>>;
+    try {
+      result = await monitorOne(f, options, store, at);
+    } catch {
+      result = "failed";
+      try {
+        await store.updateFollow(f.id, { failures: f.failures + 1, lastScanAt: at, queuedAt: null });
+      } catch {
+        /* the store is down too: the next run retries */
+      }
+    }
     out.checked += 1;
     if (result === "new-urgent") out.withNewUrgent += 1;
     if (result === "failed" || result === "incomplete") out.failed += 1;

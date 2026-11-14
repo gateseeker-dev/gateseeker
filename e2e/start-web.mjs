@@ -6,10 +6,10 @@
 //   GET  /acme/vibe/tar.gz/<sha>           -> fixtures/projects/vibe-next-supabase as a tarball
 //   GET  /repos/acme/private               -> 404 (private or missing)
 //   GET  /repos/acme/huge                  -> a repository over the size limit
-//   GET  /repos/acme/secret                -> 404 without the installation token, a private record with it (Sprint 8)
-//   GET  /repos/acme/secret/tarball/<sha>  -> the vibe fixture, with the installation token only
+//   GET  /repos/e2e-user/secret                -> 404 without the installation token, a private record with it (Sprint 8)
+//   GET  /repos/e2e-user/secret/tarball/<sha>  -> the vibe fixture, with the installation token only
 //   GET  /apps/gateseeker-e2e/installations/new?state= -> GitHub's install screen: sends the browser straight back to the site
-//   GET  /app/installations/77, POST .../access_tokens, GET /installation/repositories -> the App's endpoints for installation 77 (account "acme")
+//   GET  /app/installations/77, POST .../access_tokens, GET /installation/repositories -> the App's endpoints for installation 77 (on the signed-in user "e2e-user": only your own installation binds)
 //   POST /v1/query                         -> OSV: no vulnerabilities
 // Any other owner/repo answers 404.
 import { spawn } from "node:child_process";
@@ -90,13 +90,13 @@ const stub = createServer((req, res) => {
     res.writeHead(302, { location: `${SITE}/app/github/setup?installation_id=77&state=${encodeURIComponent(url.searchParams.get("state") ?? "")}` });
     return res.end();
   }
-  if (url.pathname === "/app/installations/77") return auth.startsWith("Bearer ey") ? json(200, { id: 77, account: { login: "acme", type: "Organization" } }) : json(401, { message: "Bad credentials" });
+  if (url.pathname === "/app/installations/77") return auth.startsWith("Bearer ey") ? json(200, { id: 77, account: { login: "e2e-user", type: "User" } }) : json(401, { message: "Bad credentials" });
   if (url.pathname === "/app/installations/77/access_tokens" && req.method === "POST") return auth.startsWith("Bearer ey") ? json(201, { token: INSTALLATION_TOKEN, expires_at: "2099-01-01T00:00:00Z" }) : json(401, { message: "Bad credentials" });
-  if (url.pathname === "/installation/repositories") return json(200, { total_count: 1, repositories: [{ full_name: "acme/secret" }] });
+  if (url.pathname === "/installation/repositories") return json(200, { total_count: 1, repositories: [{ full_name: "e2e-user/secret" }] });
   const withToken = auth === `Bearer ${INSTALLATION_TOKEN}`;
-  if (url.pathname === "/repos/acme/secret") return withToken ? json(200, { full_name: "acme/secret", private: true, size: 300, default_branch: "main", html_url: "https://github.com/acme/secret" }) : json(404, { message: "Not Found" });
-  if (url.pathname.startsWith("/repos/acme/secret/commits/")) return withToken ? json(200, { sha: SHA }) : json(404, { message: "Not Found" });
-  if (url.pathname === `/repos/acme/secret/tarball/${SHA}`) {
+  if (url.pathname === "/repos/e2e-user/secret") return withToken ? json(200, { full_name: "e2e-user/secret", private: true, size: 300, default_branch: "main", html_url: "https://github.com/e2e-user/secret" }) : json(404, { message: "Not Found" });
+  if (url.pathname.startsWith("/repos/e2e-user/secret/commits/")) return withToken ? json(200, { sha: SHA }) : json(404, { message: "Not Found" });
+  if (url.pathname === `/repos/e2e-user/secret/tarball/${SHA}`) {
     if (!withToken) return json(404, { message: "Not Found" });
     res.writeHead(200, { "content-type": "application/x-gzip", "content-length": archive.length });
     return res.end(archive);

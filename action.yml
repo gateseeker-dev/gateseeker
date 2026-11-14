@@ -111,6 +111,11 @@ runs:
           (cd "$ACTION_PATH" && pnpm install --frozen-lockfile >/dev/null && pnpm exec tsc -p tsconfig.build.json && node dist/intel-cli.js build >/dev/null)
           echo "bin=node $ACTION_PATH/dist/action-cli.js" >> "$GITHUB_OUTPUT"
         else
+          # The version becomes part of a command line: accept only a version number.
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            echo "::error::version must be a version number such as 1.1.0, got: $VERSION"
+            exit 1
+          fi
           echo "bin=npx --yes --package=gateseeker@${VERSION} gateseeker-action" >> "$GITHUB_OUTPUT"
         fi
 

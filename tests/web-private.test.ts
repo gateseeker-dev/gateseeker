@@ -61,8 +61,9 @@ interface Call {
 
 /**
  * acme/secret is private: 404 without the token, 200 with it. The App's
- * endpoints answer for installation 42 (account "Acme"), which covers
- * "secret" but not "other".
+ * endpoints answer for installation 42, on Alice's own GitHub user "Acme",
+ * which covers "secret" but not "other"; installation 43 is on the
+ * organization "OrgCo" and 44 on Bob's user.
  */
 function gitHub(): { fetch: typeof fetch; calls: Call[] } {
   const calls: Call[] = [];
@@ -76,7 +77,9 @@ function gitHub(): { fetch: typeof fetch; calls: Call[] } {
     const path = new URL(url).pathname;
     const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
     if (url.includes("osv.dev")) return json(200, { vulns: [] });
-    if (path === "/app/installations/42") return auth?.startsWith("Bearer ey") ? json(200, { id: 42, account: { login: "Acme", type: "Organization" } }) : json(401, {});
+    if (path === "/app/installations/42") return auth?.startsWith("Bearer ey") ? json(200, { id: 42, account: { login: "Acme", type: "User" } }) : json(401, {});
+    if (path === "/app/installations/43") return auth?.startsWith("Bearer ey") ? json(200, { id: 43, account: { login: "OrgCo", type: "Organization" } }) : json(401, {});
+    if (path === "/app/installations/44") return auth?.startsWith("Bearer ey") ? json(200, { id: 44, account: { login: "bob", type: "User" } }) : json(401, {});
     if (path === "/app/installations/42/access_tokens") {
       const repos = (calls[calls.length - 1]?.body as { repositories?: string[] } | null)?.repositories ?? [];
       if (repos.includes("other")) return json(422, { message: "not covered" });
@@ -97,7 +100,8 @@ function gitHub(): { fetch: typeof fetch; calls: Call[] } {
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const PEM = privateKey.export({ type: "pkcs1", format: "pem" }).toString();
 
-const ALICE = { id: "11111111-1111-4111-8111-111111111111", login: "alice" };
+// Alice's GitHub login is "acme" (case differs from the installation's "Acme" on purpose).
+const ALICE = { id: "11111111-1111-4111-8111-111111111111", login: "acme" };
 const BOB = { id: "22222222-2222-4222-8222-222222222222", login: "bob" };
 const auth = createStaticAuth({ "tok-alice": ALICE, "tok-bob": BOB });
 
@@ -123,7 +127,7 @@ async function authorize(opts: HandlerOptions, repo = "acme/secret"): Promise<st
   expect(url.origin + url.pathname).toBe("https://github.com/apps/gateseeker-test/installations/new");
   const state = url.searchParams.get("state") ?? "";
   const bound = await handleGitHubRequest("POST", "installations", new URLSearchParams(), { installationId: 42, state }, opts, "Bearer tok-alice");
-  expect(bound).toMatchObject({ status: 200, body: { ok: true, installation: { installationId: 42, accountLogin: "Acme", accountType: "Organization", manageUrl: "https://github.com/organizations/Acme/settings/installations/42" }, repo } });
+  expect(bound).toMatchObject({ status: 200, body: { ok: true, installation: { installationId: 42, accountLogin: "Acme", accountType: "User", manageUrl: "https://github.com/settings/installations/42" }, repo } });
   return state;
 }
 
@@ -154,6 +158,39 @@ describe("private repositories without an installation", () => {
   });
 });
 
+describe("binding only your own installation (security review 2026-11-14)", () => {
+  async function stateFor(opts: HandlerOptions, token: string): Promise<string> {
+    const link = await handleGitHubRequest("GET", "install", new URLSearchParams({ repo: "acme/secret" }), null, opts, token);
+    return new URL((link.body as { url: string }).url).searchParams.get("state") ?? "";
+  }
+
+  it("refuses someone else's installation, an organization's, and records nothing", async () => {
+    const gh = gitHub();
+    const opts = options(gh);
+    // Bob has a valid state of his own, but installation 42 is on Alice's GitHub user.
+    const theft = await handleGitHubRequest("POST", "installations", new URLSearchParams(), { installationId: 42, state: await stateFor(opts, "Bearer tok-bob") }, opts, "Bearer tok-bob");
+    expect(theft).toMatchObject({ status: 403, body: { error: { code: "unauthorized" } } });
+    // Organizations wait for a check of the person's rights on GitHub.
+    const org = await handleGitHubRequest("POST", "installations", new URLSearchParams(), { installationId: 43, state: await stateFor(opts, "Bearer tok-alice") }, opts, "Bearer tok-alice");
+    expect(org).toMatchObject({ status: 403 });
+    expect(await opts.store?.listInstallations(BOB.id)).toEqual([]);
+    expect(await opts.store?.listInstallations(ALICE.id)).toEqual([]);
+    // Bob's own installation binds.
+    const own = await handleGitHubRequest("POST", "installations", new URLSearchParams(), { installationId: 44, state: await stateFor(opts, "Bearer tok-bob") }, opts, "Bearer tok-bob");
+    expect(own).toMatchObject({ status: 200, body: { installation: { installationId: 44, accountLogin: "bob" } } });
+  });
+
+  it("does not use a binding of someone else's installation that is already stored, nor mint a token for it", async () => {
+    const gh = gitHub();
+    const opts = options(gh);
+    // A row from before the check (the migration removes them; the service must not trust one anyway).
+    await opts.store?.addInstallation({ userId: BOB.id, installationId: 42, accountLogin: "Acme", accountType: "User" });
+    const out = await handleScanRequest({ url: "https://github.com/acme/secret" }, opts, "Bearer tok-bob");
+    expect(out).toMatchObject({ status: 403, body: { error: { code: "private" } } });
+    expect(gh.calls.some((c) => c.url.includes("/access_tokens"))).toBe(false);
+  });
+});
+
 describe("binding an installation", () => {
   it("accepts only a state signed for the same account, unused and unexpired; the binding needs GitHub to confirm the installation", async () => {
     const gh = gitHub();
@@ -168,11 +205,11 @@ describe("binding an installation", () => {
     // The right one, once.
     expect(await handleGitHubRequest("POST", "installations", new URLSearchParams(), { installationId: 42, state }, opts, "Bearer tok-alice")).toMatchObject({ status: 200 });
     expect(await handleGitHubRequest("POST", "installations", new URLSearchParams(), { installationId: 42, state }, opts, "Bearer tok-alice")).toMatchObject({ status: 403 });
-    expect(await opts.store?.listInstallations(ALICE.id)).toMatchObject([{ installationId: 42, accountLogin: "Acme", accountType: "Organization" }]);
+    expect(await opts.store?.listInstallations(ALICE.id)).toMatchObject([{ installationId: 42, accountLogin: "Acme", accountType: "User" }]);
     // An installation GitHub does not know is not bound.
     const again = await handleGitHubRequest("GET", "install", new URLSearchParams({ repo: "acme/secret" }), null, opts, "Bearer tok-alice");
     const state2 = new URL((again.body as { url: string }).url).searchParams.get("state") ?? "";
-    expect(await handleGitHubRequest("POST", "installations", new URLSearchParams(), { installationId: 43, state: state2 }, opts, "Bearer tok-alice")).toMatchObject({ status: 502 });
+    expect(await handleGitHubRequest("POST", "installations", new URLSearchParams(), { installationId: 99, state: state2 }, opts, "Bearer tok-alice")).toMatchObject({ status: 502 });
     expect(await opts.store?.listInstallations(ALICE.id)).toHaveLength(1);
     // Validation of the request itself.
     expect(await handleGitHubRequest("GET", "install", new URLSearchParams({ repo: "not a repo" }), null, opts, "Bearer tok-alice")).toMatchObject({ status: 400 });
@@ -192,7 +229,7 @@ describe("binding an installation", () => {
     // Bob sees nothing.
     expect(await handleGitHubRequest("GET", "installations", new URLSearchParams(), null, opts, "Bearer tok-bob")).toMatchObject({ body: { installations: [] } });
     expect(await handleGitHubRequest("DELETE", "installations/42", new URLSearchParams(), null, opts, "Bearer tok-bob")).toMatchObject({ status: 200, body: { removed: false } });
-    expect(await handleGitHubRequest("DELETE", "installations/42", new URLSearchParams(), null, opts, "Bearer tok-alice")).toMatchObject({ status: 200, body: { removed: true, manageUrl: "https://github.com/organizations/Acme/settings/installations/42" } });
+    expect(await handleGitHubRequest("DELETE", "installations/42", new URLSearchParams(), null, opts, "Bearer tok-alice")).toMatchObject({ status: 200, body: { removed: true, manageUrl: "https://github.com/settings/installations/42" } });
     expect(await opts.store?.listInstallations(ALICE.id)).toEqual([]);
   });
 });
@@ -280,7 +317,7 @@ describe("accounts and admin", () => {
     const gh = gitHub();
     const opts = options(gh);
     await authorize(opts);
-    expect(await handleAccountRequest("DELETE", { confirm: "alice" }, opts, "Bearer tok-alice")).toMatchObject({ status: 200 });
+    expect(await handleAccountRequest("DELETE", { confirm: "acme" }, opts, "Bearer tok-alice")).toMatchObject({ status: 200 });
     expect(await opts.store?.listInstallations(ALICE.id)).toEqual([]);
   });
 
