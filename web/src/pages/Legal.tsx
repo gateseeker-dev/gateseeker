@@ -14,7 +14,7 @@ import { Link } from "../router";
 export const LEGAL = {
   operator: "Fernando Capone",
   contact: "fernando.capone@gmail.com",
-  updated: "13 November 2026",
+  updated: "14 November 2026",
 };
 
 const mail = <Link href={`mailto:${LEGAL.contact}`} className="text-primary hover:underline">{LEGAL.contact}</Link>;
@@ -40,7 +40,7 @@ export function Privacy() {
             rows={[
               ["Your account", "Your GitHub user id, login, name, avatar address and the email address GitHub shares, kept by our sign-in provider (Supabase Auth) while the account exists. We never receive your GitHub password. Signing in gives us no access to your repositories; private repositories are read only through the separate authorization below."],
               ["GitHub App authorizations", "When you allow Gateseeker to read private repositories, GitHub records an installation of our App on your account or organization, read-only and limited to the repositories you pick there. We keep the installation's number and whose it is, so we can ask GitHub for a one-hour token when you analyze or follow one of those repositories. The token is used for that analysis and never stored. Disconnect in Settings, or uninstall the App on GitHub, at any time; deleting your account removes our record."],
-              ["Saved reports", "The result of each analysis you run: repository name, commit, findings and the code lines they point to (secret values are always masked). Public repositories only. Deleted after 30 days."],
+              ["Saved reports", "The result of each analysis you run: repository name, commit, findings and the code lines they point to (secret values are always masked). Public repositories, and the private ones you authorized; a private repository's report is never shared unless you turn sharing on. Deleted after 30 days."],
               ["Analysis history", "One line per analysis (repository, commit, verdict, counts by priority), so the dashboard works on any device. Deleted after 180 days."],
               ["Followed repositories", "Which repositories you follow, the date of the last check and a short summary of new findings waiting for the next email. Kept until you unfollow, unsubscribe from an email, or delete your account."],
               ["Usage limits", "How many analyses your account ran in the current hour, to keep the free service fair."],
