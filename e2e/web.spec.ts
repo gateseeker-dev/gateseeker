@@ -217,7 +217,30 @@ test.describe("public page", () => {
     // A signed-in visit to /login forwards without counting a new sign-in.
     await page.goto("/login");
     await expect(page).toHaveURL(/\/app$/);
-    await expect.poll(() => events).toEqual(["login_view", "login_start", "signin_complete"]);
+    // One visit per tab (direct: no referrer), then the funnel; the visit and the login view are sent by independent effects, so compare as sets.
+    await expect.poll(() => [...events].sort()).toEqual(["login_start", "login_view", "signin_complete", "visit_direct"]);
+  });
+
+  test("counts where a signed-out visit came from once per tab, as one word", async ({ page }) => {
+    const sent: unknown[] = [];
+    page.on("request", (r) => {
+      if (r.url().endsWith("/api/event")) sent.push(JSON.parse(r.postData() ?? "{}"));
+    });
+    await page.goto("/supabase-rls?ref=hn");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Is your Supabase database open to anyone?");
+    await expect(page.getByRole("link", { name: "public CVE record" })).toHaveAttribute("href", "https://nvd.nist.gov/vuln/detail/CVE-2025-48757");
+    await page.getByRole("contentinfo").getByRole("link", { name: "Get started" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Get started");
+    await page.reload();
+    await expect.poll(() => sent).toEqual([{ kind: "visit_hn" }]);
+  });
+
+  test("offers the MCP server and the Claude Code hook with a pinned version", async ({ page }) => {
+    await page.goto("/get-started#agent");
+    const agent = page.locator("#agent");
+    await expect(agent).toContainText("Inside your AI agent");
+    await expect(agent).toContainText(/"gateseeker@\d+\.\d+\.\d+"/);
+    await expect(agent).toContainText("npx --no-install gateseeker hook claude-code");
   });
 
   test("rejects an invalid URL without calling the service", async ({ page }) => {

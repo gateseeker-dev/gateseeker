@@ -83,7 +83,10 @@ Scope in `docs/SPRINT_8.md` (proposed 2026-11-04): a GitHub App with read-only, 
 
 *Hypothesis:* people bring their real (private) projects once the site can read them. *Metric:* 20 private repositories analyzed, 5 followed.
 
-### Sprint 9 — First paid plan and the App's pull-request check
+### Sprint 9 — Distribution (approved 2026-11-13, replaces the paid plan here)
+Scope in `docs/SPRINT_9.md`: the MCP server and the Claude Code commit hook (track A3), a `/supabase-rls` page, visit-source counters, and the feed collector no longer stalled by an open proposal. The paid plan below waits for its trigger (50 accounts with more than one analysis).
+
+### Later — First paid plan and the App's pull-request check
 - First paid plan (open core, as in `PRODUCT.md` §8): private repos, monitoring, history beyond 30 days. The free tier keeps public scans, the CLI and the Action.
 - Pull-request check from the App: no YAML needed. Install it, choose repos, done. This is the easy path for people who will never edit a workflow file.
 

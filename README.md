@@ -21,6 +21,40 @@ Sign in with GitHub at [gateseeker.vercel.app](https://gateseeker.vercel.app), p
 
 The workspace links each report to the GitHub Action below, with the repository already filled in.
 
+## Use inside your AI agent
+
+**MCP server.** `gateseeker mcp` speaks the Model Context Protocol on stdin/stdout, so Claude Code, Cursor and other MCP clients can run the gate themselves. One tool, `gateseeker_scan` (optional `path`, `only`, `fail_on`), returning the same text report and the verdict. It only reads, and refuses paths outside the directory it was started in. Save as `.mcp.json` at the project root (Cursor: `.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "gateseeker": {
+      "command": "npx",
+      "args": ["-y", "gateseeker@1.1.0", "mcp"]
+    }
+  }
+}
+```
+
+The version is pinned on purpose: GSK-AGENT-003 flags MCP servers that run whatever version is newest.
+
+**Claude Code hook.** `gateseeker hook claude-code` reads a `PreToolUse` event on stdin; when the agent is about to run `git commit`, it runs the gate on the project and holds the commit (exit code 2, with what to fix, which Claude Code passes back to the agent) on `fail` or `incomplete`. Every other command passes without a scan. Install Gateseeker in the project (`npm install --save-dev gateseeker`) and add to `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "npx --no-install gateseeker hook claude-code" }]
+      }
+    ]
+  }
+}
+```
+
+Options: `--fail-on <P1..P4>` (default P2), `--patterns gate` (code-pattern findings also hold the commit; default warn, as in the Action) and `--allow-incomplete` (an incomplete check is reported but does not hold the commit). The hook runs the project's own installed copy, never a download (GSK-AGENT-002). Both snippets are tested against Gateseeker's own agent rules.
+
 ## Use in GitHub Actions
 
 ```yaml

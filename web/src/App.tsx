@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { AuthProvider, useAuth } from "./auth-context";
 import { PageSkeleton, ReportSkeleton } from "./components/Skeletons";
+import { countVisit } from "./funnel";
 
 import { About } from "./pages/About";
 import { AnalyzePage } from "./pages/Analyze";
@@ -12,6 +13,7 @@ import { DesignSystem } from "./pages/DesignSystem";
 import { GetStarted } from "./pages/GetStarted";
 import { Home } from "./pages/Home";
 import { HowItWorks } from "./pages/HowItWorks";
+import { SupabaseRls } from "./pages/SupabaseRls";
 import { Privacy, Terms } from "./pages/Legal";
 import { Login } from "./pages/Login";
 import { Resources, WorkspaceResources } from "./pages/Resources";
@@ -49,6 +51,7 @@ const TITLES: Record<string, string> = {
   "/login": "Log in · Gateseeker",
   "/unsubscribe": "Stop following · Gateseeker",
   "/privacy": "Privacy · Gateseeker",
+  "/supabase-rls": "Is your Supabase database open? · Gateseeker",
   "/terms": "Terms of use · Gateseeker",
   "/advisories": "Curated advisories · Gateseeker",
   "/app": "Analyze a repository · Gateseeker",
@@ -104,6 +107,9 @@ function Shell() {
     setOpen(false);
   }, [path, reportId]);
   useEffect(() => {
+    if (auth.status === "signed-out") countVisit();
+  }, [auth.status]);
+  useEffect(() => {
     if (auth.status === "signed-out" && path === "/app/resources") navigate("/resources", { replace: true });
     if (auth.status !== "signed-in") return;
     if (PUBLIC_ROUTES.has(path)) navigate(WORKSPACE_HOME, { replace: true });
@@ -119,6 +125,7 @@ function Shell() {
   else if (path === "/login") page = <Login />;
   else if (path === "/unsubscribe") page = <Unsubscribe />;
   else if (path === "/privacy") page = <Privacy />;
+  else if (path === "/supabase-rls") page = <SupabaseRls />;
   else if (path === "/terms") page = <Terms />;
   else if (path === "/advisories") page = <Advisories />;
   else if (advisoryId) page = <AdvisoryPage id={advisoryId} />;
@@ -232,7 +239,7 @@ function Shell() {
             <Brand />
             <p className="max-w-sm text-muted-foreground">Security gate for AI-generated code. Reads your repository, never runs it, and tells you which findings matter and why.</p>
           </div>
-          <FooterColumn title="Product" links={[{ href: "/how-it-works", label: "How it works" }, { href: "/get-started", label: "Get started" }, { href: "/resources", label: "Rules and limits" }, { href: "/login", label: "Log in" }]} />
+          <FooterColumn title="Product" links={[{ href: "/how-it-works", label: "How it works" }, { href: "/get-started", label: "Get started" }, { href: "/resources", label: "Rules and limits" }, { href: "/supabase-rls", label: "Supabase RLS check" }, { href: "/login", label: "Log in" }]} />
           <FooterColumn title="Project" links={[{ href: "/about", label: "About" }, { href: "https://github.com/gateseeker-dev/gateseeker", label: "GitHub" }, { href: "https://www.npmjs.com/package/gateseeker", label: "npm" }, { href: "https://github.com/gateseeker-dev/gateseeker/blob/main/SECURITY.md", label: "Security policy" }]} />
           <FooterColumn title="Legal" links={[{ href: "/privacy", label: "Privacy" }, { href: "/terms", label: "Terms of use" }]} />
         </div>

@@ -6,7 +6,9 @@
  * page never waits on or reacts to the answer.
  */
 
-export type FunnelEvent = "login_view" | "login_start" | "signin_complete" | "email_click" | "example_view" | "public_report_view" | "update_banner_shown" | "update_banner_reload";
+import { visitSource, type VisitEventKind } from "gateseeker/dist/web/visit-source.js";
+
+export type FunnelEvent = "login_view" | "login_start" | "signin_complete" | "email_click" | "example_view" | "public_report_view" | "update_banner_shown" | "update_banner_reload" | VisitEventKind;
 
 const SENT = "gateseeker:funnel:";
 const PENDING = "gateseeker:funnel:pending";
@@ -28,6 +30,21 @@ function once(kind: FunnelEvent): void {
     /* storage unavailable: still count, possibly twice */
   }
   send(kind);
+}
+
+/**
+ * A signed-out visit, once per tab: which kind of site it came from (closed
+ * list, src/web/visit-source.ts). Only the referrer's host is looked at, and
+ * only the resulting word is sent.
+ */
+export function countVisit(): void {
+  try {
+    if (sessionStorage.getItem(`${SENT}visit`) === "1") return;
+    sessionStorage.setItem(`${SENT}visit`, "1");
+  } catch {
+    return; // without storage every page view would count as a visit
+  }
+  send(`visit_${visitSource(new URLSearchParams(window.location.search).get("ref"), document.referrer, window.location.hostname)}`);
 }
 
 /** The sign-in page was shown to a signed-out visitor. */

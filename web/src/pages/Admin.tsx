@@ -36,6 +36,14 @@ const EVENT_LABELS: Record<string, string> = {
   email_capped: "Emails held by the daily cap",
   email_failed: "Emails that failed to send",
   unsubscribe: "Unsubscribes",
+  visit_direct: "Visits: direct or unknown",
+  visit_search: "Visits: search engines",
+  visit_github: "Visits: GitHub",
+  visit_hn: "Visits: Hacker News",
+  visit_reddit: "Visits: Reddit",
+  visit_x: "Visits: X",
+  visit_linkedin: "Visits: LinkedIn",
+  visit_other: "Visits: other sites",
 };
 
 function NotAdmin() {

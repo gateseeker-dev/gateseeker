@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { SignedFeed } from "../intel/feed-signature.js";
 import type { PendingAlert } from "./emails.js";
+import { VISIT_EVENT_KINDS } from "./visit-source.js";
 
 /**
  * Persistence for the hosted service: saved reports (30-day retention), the
@@ -133,7 +134,7 @@ export type FollowResult = { ok: true; created: boolean; follow: FollowRecord } 
 
 /** Aggregate page events (login funnel): counted per UTC day, no user, IP or user agent. */
 /** Kinds the page may send to POST /api/event. */
-export const CLIENT_EVENT_KINDS = ["login_view", "login_start", "signin_complete", "email_click", "example_view", "public_report_view", "update_banner_shown", "update_banner_reload", "github_install_start", "github_install_done"] as const;
+export const CLIENT_EVENT_KINDS = ["login_view", "login_start", "signin_complete", "email_click", "example_view", "public_report_view", "update_banner_shown", "update_banner_reload", "github_install_start", "github_install_done", ...VISIT_EVENT_KINDS] as const;
 /** All kinds, including the ones only the service counts (monitor and emails, docs/SPRINT_6.md 3.7). */
 export const EVENT_KINDS = [...CLIENT_EVENT_KINDS, "rescan_complete", "rescan_incomplete", "rescan_failed", "email_follow_confirm", "email_alert", "email_paused", "email_capped", "email_failed", "unsubscribe"] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];

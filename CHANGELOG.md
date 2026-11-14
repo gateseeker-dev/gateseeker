@@ -2,8 +2,9 @@
 
 One short section per published version, newest first. The workspace links the current section from its "updated" notice, so write for the person who uses the product, not for the engineer.
 
-## Unreleased
+## 1.1.0 (2026-11-13)
 
+- Gateseeker inside your AI agent. `gateseeker mcp` is an MCP server: add it to Claude Code or Cursor and the agent can run the gate itself ("check this project before I commit"). `gateseeker hook claude-code` is a hook that runs the gate when Claude Code is about to commit and holds the commit when there is something to fix now, telling the agent what. Both read files only, like the CLI; the configuration to paste is on the Get started page.
 - The "Gateseeker was updated" notice now also appears when the site is deployed without a version change (it compares the deploy, not only the version), so an open workspace always learns about a new build.
 - Private repositories through the site (Sprint 8, `docs/SPRINT_8.md`): paste a private repository, allow Gateseeker to read it on GitHub's own screen (read-only, only the repositories you pick, nothing installed in them), and the analysis resumes. Followed private repositories get the daily check too; revoking the authorization pauses it with the reason. Settings lists the authorizations with Disconnect. The service never stores a credential: one one-hour token per analysis.
 

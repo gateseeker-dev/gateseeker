@@ -2,7 +2,9 @@
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { runClaudeCodeHook } from "./agent-hook.js";
 import { loadAdvisories } from "./intel/advisories.js";
+import { runMcpServer } from "./mcp.js";
 import { DEFAULT_PARSER_LIMITS } from "./parser/lockfile.js";
 import { DEFAULT_WALK_LIMITS } from "./patterns/walker.js";
 import { renderSarif } from "./report/sarif.js";
@@ -25,6 +27,14 @@ export const EXIT = { pass: 0, fail: 1, incomplete: 2, usage: 3 } as const;
 const USAGE = `gateseeker ${GATESEEKER_VERSION}
 
 Usage: gateseeker scan <project-dir | lockfile> [options]
+       gateseeker mcp [--root <project-dir>]
+       gateseeker hook claude-code [--fail-on <P1..P4>] [--patterns <warn|gate>] [--allow-incomplete]
+
+  mcp: a Model Context Protocol server on stdin/stdout with one tool,
+  gateseeker_scan, for coding agents (Claude Code, Cursor). Scans stay inside
+  the project directory (default: the current one).
+  hook claude-code: a PreToolUse hook that runs the gate before the agent's
+  "git commit" and blocks the commit on fail or incomplete (exit code 2).
 
   A directory runs the code-pattern rules and the dependency analysis for the
   lockfiles at its root: one of package-lock.json, pnpm-lock.yaml or yarn.lock
@@ -64,6 +74,8 @@ Exit codes: 0 pass, 1 fail, 2 incomplete, 3 usage or rejected input.
 
 interface Io {
   stdout: (s: string) => void;
+  /** For `mcp` and `hook`, which read from stdin; tests pass a stream. */
+  stdin?: NodeJS.ReadableStream;
   stderr: (s: string) => void;
   /** When given, a text run ends with one read of the npm registry to say whether a newer version exists (never in tests: they pass none or a double). */
   updateFetch?: typeof fetch;
@@ -112,7 +124,41 @@ const optionSpec = {
   version: { type: "boolean", short: "v" },
 } as const;
 
+async function readAll(stream: NodeJS.ReadableStream, max = 1024 * 1024): Promise<string> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of stream) {
+    const b = typeof chunk === "string" ? Buffer.from(chunk) : (chunk);
+    size += b.length;
+    if (size > max) break;
+    chunks.push(b);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function agentCommand(argv: string[], io: Io): Promise<number> {
+  const [command, ...rest] = argv;
+  try {
+    if (command === "mcp") {
+      const { values } = parseArgs({ args: rest, options: { root: { type: "string" } }, allowPositionals: false });
+      await runMcpServer({ root: resolve(values.root ?? ".") }, { input: io.stdin ?? process.stdin, output: io.stdout });
+      return EXIT.pass;
+    }
+    const { values, positionals } = parseArgs({ args: rest, options: { "fail-on": { type: "string" }, patterns: { type: "string" }, "allow-incomplete": { type: "boolean" } }, allowPositionals: true });
+    if (positionals.length !== 1 || positionals[0] !== "claude-code") throw new UsageError("Expected: gateseeker hook claude-code");
+    const failOn = oneOf(values["fail-on"]?.toUpperCase(), PRIORITIES, "fail-on", "P2");
+    const patternsMode = oneOf(values.patterns, ["warn", "gate"] as const, "patterns", "warn");
+    return await runClaudeCodeHook(await readAll(io.stdin ?? process.stdin), { failOn, patternsMode, allowIncomplete: values["allow-incomplete"] === true }, io.stderr);
+  } catch (err) {
+    io.stderr(`${err instanceof Error ? err.message : String(err)}
+
+${USAGE}`);
+    return EXIT.usage;
+  }
+}
+
 export async function main(argv: string[], io: Io): Promise<number> {
+  if (argv[0] === "mcp" || argv[0] === "hook") return agentCommand(argv, io);
   let parsed: ReturnType<typeof parseArgs<{ options: typeof optionSpec; allowPositionals: true }>>;
   try {
     parsed = parseArgs({ args: argv, options: optionSpec, allowPositionals: true });
@@ -258,6 +304,7 @@ if (isDirectRun || process.env.GATESEEKER_CLI === "1") {
   const code = await main(process.argv.slice(2), {
     stdout: (s) => process.stdout.write(s),
     stderr: (s) => process.stderr.write(s),
+    stdin: process.stdin,
     updateFetch: globalThis.fetch,
   });
   process.exitCode = code;

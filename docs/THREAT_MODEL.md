@@ -161,6 +161,18 @@ Residual: Gateseeker trusts TLS and OSV itself.
 | Email provider key leaks | `BREVO_API_KEY` only in Vercel environment variables, sent only in the request header; provider errors are reported by status, never with the response body. | `web-email.test.ts` "posts the message with the key in the api-key header only" |
 | Keys leak from the repository or the page | Service key only in Vercel environment variables; the page receives only the publishable key, which RLS makes useless for table access. | `web-handler.test.ts` env tests; `docs/DEPLOY.md` |
 
+### 12. Agent integration: MCP server and Claude Code hook (Sprint 9)
+
+| Threat | Mitigation | Test |
+|---|---|---|
+| A prompt injected into a project file makes the agent use the MCP tool to read files outside the project (home directory, SSH keys) | The tool takes only `path`, `only` and `fail_on` (strict schema); the path is resolved through links and must stay inside the directory the server was started in; the answer is the same sanitized, redacted report as the CLI. | `agent-integration.test.ts` "refuses paths outside the project, through .. or a link …" |
+| The MCP server executes something from the project | Same engine as the CLI: files are read as text, nothing installed or run; the server has no other tool. | `agent-integration.test.ts` "scans the project and answers with the redacted report …" |
+| Malformed or hostile JSON-RPC input crashes or confuses the server | Every message validated; notifications never answered; unknown methods and tools get JSON-RPC errors; a parse error answers -32700 and the loop continues. | `agent-integration.test.ts` "never answers notifications …", "frames messages one per line …" |
+| The commit hook slows every command or is bypassed by command shapes | It scans only when the command contains `git … commit` (bounded pattern, ReDoS timing test); other tool calls exit 0 at once. A command that hides the commit (a script that commits) is not caught: the hook is a convenience, the Action stays the gate. | `agent-integration.test.ts` "recognises git commit …", "stays linear …" |
+| An incomplete check lets the agent commit as if it passed | `incomplete` holds the commit (exit 2) with the reason, unless the user adds `--allow-incomplete`, which is reported in the message. | `agent-integration.test.ts` "holds the commit when the check is incomplete …" |
+| The configuration we recommend is itself risky (unpinned MCP package, hook that downloads code) | The snippets live in `src/agent-snippets.ts`; a test writes them into a project and scans it with GSK-AGENT-002/003: no finding, and an unpinned variant is caught. | `agent-integration.test.ts` "does not trip our own agent rules" |
+| Visit-source counters identify visitors | Only one word from a closed list is sent (from our `?ref=` or the referrer's host), once per tab; stored as a daily aggregate like every counter; documented in the privacy notice. | `agent-integration.test.ts` "maps our ?ref= and the referrer's host to a closed list …"; e2e "counts where a signed-out visit came from …" |
+
 ## Residual risks
 
 - A dependency that is vulnerable but not yet in OSV yields `no-known-vulnerabilities`.

@@ -1,15 +1,17 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@gateseeker/ui-kit";
-import { Globe, Terminal } from "lucide-react";
+import { Bot, Globe, Terminal } from "lucide-react";
+import { claudeHookSettings, mcpConfig } from "gateseeker/dist/agent-snippets.js";
 import type { ReactNode } from "react";
 
 import { CiSnippet } from "../components/CiSnippet";
 import { PageIntro } from "../components/PageIntro";
 import { Link } from "../router";
+import { BUILT_VERSION } from "../update-notice";
 
 export function GetStarted() {
   return (
     <>
-      <PageIntro title="Get started" lead="Three ways to run the same engine. Pick the one that matches where you are: curious, at the terminal, or about to merge." />
+      <PageIntro title="Get started" lead="Four ways to run the same engine. Pick the one that matches where you are: curious, at the terminal, inside your AI agent, or about to merge." />
 
       <div className="grid gap-6">
         <Step n={1} icon={<Globe aria-hidden="true" />} title="In the browser, no install">
@@ -27,6 +29,19 @@ npx gateseeker scan . --baseline base.lock   # compare with a previous lockfile`
           </p>
         </Step>
 
+        <section id="agent" className="scroll-mt-6">
+          <Step n={3} icon={<Bot aria-hidden="true" />} title="Inside your AI agent" description="Claude Code, Cursor and other agents that speak MCP can run the gate themselves. It reads files only, like the CLI, and never leaves the project folder.">
+            <p className="text-sm text-muted-foreground">
+              Ask your agent to check the project: save this as <code className="rounded bg-muted px-1.5 py-0.5">.mcp.json</code> at the project root (Cursor: <code className="rounded bg-muted px-1.5 py-0.5">.cursor/mcp.json</code>). The version is pinned on purpose.
+            </p>
+            <pre className="mt-2 overflow-x-auto rounded-md border bg-input p-4 font-mono text-xs leading-relaxed inset-shadow-solid"><code>{mcpConfig(BUILT_VERSION)}</code></pre>
+            <p className="mt-4 text-sm text-muted-foreground">
+              Hold Claude Code's commits while a P1 or P2 finding is open: install Gateseeker in the project (<code className="rounded bg-muted px-1.5 py-0.5">npm install --save-dev gateseeker</code>) and add this hook to <code className="rounded bg-muted px-1.5 py-0.5">.claude/settings.json</code>. It runs only before <code className="rounded bg-muted px-1.5 py-0.5">git commit</code> and tells the agent what to fix. Like the Action, code-pattern findings are reported but do not hold the commit unless you add <code className="rounded bg-muted px-1.5 py-0.5">--patterns gate</code> to the command.
+            </p>
+            <pre className="mt-2 overflow-x-auto rounded-md border bg-input p-4 font-mono text-xs leading-relaxed inset-shadow-solid"><code>{claudeHookSettings()}</code></pre>
+          </Step>
+        </section>
+
         <CiSnippet />
 
         <Card>
@@ -43,7 +58,7 @@ npx gateseeker scan . --baseline base.lock   # compare with a previous lockfile`
         <Card>
           <CardHeader>
             <CardTitle>What is next</CardTitle>
-            <CardDescription>Following a repository with an email when something new appears, private repositories and team gate policies are on the roadmap. The engine, the rules and the Action stay open source. Tell us what you need on GitHub.</CardDescription>
+            <CardDescription>Signed in, you can follow a repository and get an email when something new appears, and analyze private repositories. Team gate policies are on the roadmap. The engine, the rules and the Action stay open source. Tell us what you need on GitHub.</CardDescription>
           </CardHeader>
         </Card>
       </div>
