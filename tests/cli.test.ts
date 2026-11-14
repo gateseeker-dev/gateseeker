@@ -78,6 +78,30 @@ describe("gateseeker scan (CLI)", () => {
     expect(c.stderr()).toBe("");
   });
 
+  it("ends a text run with the newer-version line when a registry double says so, and stays silent when opted out", async () => {
+    responses["lodash"] = { status: 200, body: LODASH };
+    responses["zod"] = { status: 200, body: "{}" };
+    const registry = ((input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      return Promise.resolve(new Response(JSON.stringify(url.endsWith("/gateseeker/latest") ? { version: "99.0.0" } : {})));
+    }) as typeof fetch;
+    const c = capture();
+    const code = await main(["scan", fixturePath("lockfiles/direct-only.package-lock.json"), "--osv-endpoint", endpoint], { ...c.io, updateFetch: registry, env: {} });
+    expect(code).toBe(EXIT.fail);
+    expect(c.stderr()).toContain("Gateseeker 99.0.0 is available");
+    expect(c.stdout()).not.toContain("99.0.0");
+
+    const quiet = capture();
+    await main(["scan", fixturePath("lockfiles/direct-only.package-lock.json"), "--osv-endpoint", endpoint, "--no-update-check"], { ...quiet.io, updateFetch: registry, env: {} });
+    expect(quiet.stderr()).toBe("");
+    const byEnv = capture();
+    await main(["scan", fixturePath("lockfiles/direct-only.package-lock.json"), "--osv-endpoint", endpoint], { ...byEnv.io, updateFetch: registry, env: { GATESEEKER_NO_UPDATE_CHECK: "1" } });
+    expect(byEnv.stderr()).toBe("");
+    const json = capture();
+    await main(["scan", fixturePath("lockfiles/direct-only.package-lock.json"), "--osv-endpoint", endpoint, "--format", "json"], { ...json.io, updateFetch: registry, env: {} });
+    expect(json.stderr()).toBe("");
+  });
+
   it("exits 0 with the cautious wording when nothing is known", async () => {
     responses["lodash"] = { status: 200, body: "{}" };
     responses["zod"] = { status: 200, body: "{}" };
@@ -240,13 +264,18 @@ describe("gateseeker scan <directory> (CLI)", () => {
     expect(c.stdout()).toContain("No known vulnerabilities or insecure patterns were found in the sources consulted.");
   });
 
-  it("walker limits reject the input with exit 3", async () => {
+  it("the file-count limit rejects the input with exit 3; oversize files are skipped and listed", async () => {
     const c = capture();
     expect(await main(["scan", VIBE, "--only", "patterns", "--max-files", "2"], c.io)).toBe(EXIT.usage);
     expect(c.stderr()).toContain("Input rejected (too-many-files)");
     const d = capture();
-    expect(await main(["scan", VIBE, "--only", "patterns", "--max-file-size", "100"], d.io)).toBe(EXIT.usage);
-    expect(d.stderr()).toContain("Input rejected (file-too-large)");
+    expect(await main(["scan", VIBE, "--only", "patterns", "--max-file-size", "100"], d.io)).toBe(EXIT.pass);
+    expect(d.stdout()).toMatch(/\d+ too large;/);
+    const j = capture();
+    expect(await main(["scan", VIBE, "--only", "patterns", "--max-file-size", "100", "--format", "json"], j.io)).toBe(EXIT.pass);
+    const report = JSON.parse(j.stdout()) as { limitations: string[]; patterns: { filesSkippedLarge: number } };
+    expect(report.patterns.filesSkippedLarge).toBeGreaterThan(0);
+    expect(report.limitations.join(" ")).toMatch(/file\(s\) above the size limit were not scanned for code patterns/);
   });
 
   it("rejects --only on a lockfile path and bad --patterns values", async () => {

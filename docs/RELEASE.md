@@ -18,7 +18,7 @@ O CI não publica diretamente: ele **prepara** a versão no npm (`npm stage publ
 
 ## A cada versão
 
-1. Engenharia: atualiza `version` em `package.json` e o `version` padrão em `action.yml` (iguais), atualiza o README se houver entradas novas, PR, CI verde, merge.
+1. Engenharia: atualiza `version` em `package.json` e o `version` padrão em `action.yml` (iguais), move a seção "Unreleased" de `CHANGELOG.md` para a versão (é o texto que o aviso de atualização do workspace linka), atualiza o README se houver entradas novas, PR, CI verde, merge.
 2. Engenharia: cria e envia a tag `vX.Y.Z` na main. `release.yml` roda `pnpm check` e os testes de navegador, confere que a tag bate com o `package.json`, confere a lista de arquivos do pacote, **prepara** a versão no npm com proveniência, cria a release no GitHub e move a tag flutuante `v1`.
 3. **[PO] Aprovar no npm.** Abra https://www.npmjs.com/package/gateseeker, aba **Staged Packages**, confira a versão e clique em **Approve**; confirme com o autenticador. Só então a versão fica instalável. Alternativa pela linha de comando: `npm stage list gateseeker` e `npm stage approve <id>`.
 4. PO: confira que a versão apareceu com o selo "Provenance" na página do pacote e que a release existe em https://github.com/gateseeker-dev/gateseeker/releases.
@@ -28,6 +28,22 @@ Versões `1.0.0-beta.2` a `1.0.0-beta.5` existem como tags no git mas nunca cheg
 `1.0.0-beta.7` (2026-10-28): primeira versão preparada pelo CI já sob a organização `gateseeker-dev`, depois de o PO apagar a conexão antiga no npm e criar outra com o novo dono (a conexão não pode ser editada, só recriada; só "npm stage publish" permitido). Aprovada pelo PO no mesmo dia. A aba **Staged Packages** não fica na página pública do pacote; ela aparece para o mantenedor logado (o PO a encontrou pela própria conta). Alternativa sempre disponível: `npm stage list gateseeker` e `npm stage approve <id>` no terminal, com o código do autenticador.
 
 Revisão do histórico feita em 2026-10-28 antes de abrir o repositório: as únicas cadeias com formato de segredo em todos os 34 commits são as fixtures sintéticas da Sprint 1 (`fixtures/projects/`, `tests/patterns.test.ts`), documentadas em `fixtures/projects/README.md`. Os commits de main carregam o e-mail pessoal do autor (`fernando.capone@gmail.com`) em parte do histórico; isso passa a ser público com o repositório.
+
+## Marketplace do GitHub (uma vez, pelo PO)
+
+A Action já tem o que o Marketplace exige: `action.yml` na raiz com `name`, `description` e `branding`, README e licença. A listagem é feita na tela de release do GitHub, não por código:
+
+1. https://github.com/gateseeker-dev/gateseeker/releases → **Draft a new release**, escolha a tag da versão (ou crie, por exemplo `v1.0.0`, o que dispara o `release.yml` e a publicação em etapas no npm).
+2. Marque **Publish this Action to the GitHub Marketplace**. O GitHub confere o `action.yml`; o nome "Gateseeker" precisa estar livre no Marketplace (a busca por "gateseeker" no Marketplace não devolvia nenhuma Action em 2026-11-03) e a organização precisa de 2FA obrigatório, que já tem.
+3. Escolha as categorias **Security** e **Code quality**, aceite os termos do Marketplace e clique em **Publish release**.
+
+A partir daí a Action aparece em https://github.com/marketplace e cada release nova atualiza a listagem sozinha.
+
+`1.0.0` (2026-11-04): primeira versão estável, aprovada pelo PO no npm (`latest` agora aponta para ela) e listada no Marketplace como **Gateseeker Security Gate** (https://github.com/marketplace/actions/gateseeker-security-gate). O nome "Gateseeker" sozinho foi recusado pelo Marketplace por coincidir com o usuário `gateseeker` do GitHub, e a descrição precisa ter menos de 125 caracteres; o `action.yml` foi ajustado na main e o GitHub leu a versão corrigida ao editar a release.
+
+## Primeira versão estável (decisão do PO)
+
+A dist-tag `latest` do npm está na `1.0.0-beta.1`; quem roda `npm install gateseeker` recebe a Sprint 3. O `release.yml` já publica com `--tag latest` qualquer tag sem sufixo (`v1.0.0`), então a correção é publicar a 1.0.0: engenharia sobe `version` para `1.0.0` em `package.json` e `action.yml`, cria a tag, o PO aprova no npm (fluxo acima) e, na mesma release, marca o Marketplace. Alternativa sem versão nova, só para mover a etiqueta: `npm dist-tag add gateseeker@1.0.0-beta.7 latest` no terminal do PO, com o código do autenticador.
 
 ## Como alguém verifica a proveniência
 

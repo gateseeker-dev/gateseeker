@@ -1,0 +1,2 @@
+Touched to trigger a production build when only environment variables changed (Vercel skips commits outside web/).
+2026-11-04T21:05Z

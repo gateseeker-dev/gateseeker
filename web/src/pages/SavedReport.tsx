@@ -1,9 +1,15 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@gateseeker/ui-kit";
 import { useEffect, useState } from "react";
 
+import { countEmailClick } from "../funnel";
+import { clearScanNote, readScanNote } from "../scan-note";
+
 import { fetchReport, type ReportOutcome } from "../api";
 import { useAuth } from "../auth-context";
 import { CiSnippet } from "../components/CiSnippet";
+import { ComparisonBand, useComparison } from "../components/Comparison";
+import { FollowButton } from "../components/FollowButton";
+import { ShareButton } from "../components/ShareButton";
 import { ReportSkeleton } from "../components/Skeletons";
 import { Link } from "../router";
 import { ReportView } from "../views/Report";
@@ -18,6 +24,18 @@ import { useWorkspaceTitle } from "../Workspace";
 export function SavedReport({ id }: { id: string }) {
   const auth = useAuth();
   const [outcome, setOutcome] = useState<ReportOutcome | null>(null);
+  // Left by the analyze view when it opened this report right after an analysis.
+  const [note] = useState(() => readScanNote(id));
+  useEffect(() => { clearScanNote(id); }, [id]);
+  // Opened from an alert email: count it once and drop the parameter from the address.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("from") !== "email") return;
+    countEmailClick();
+    params.delete("from");
+    const rest = params.toString();
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${rest ? `?${rest}` : ""}${window.location.hash}`);
+  }, []);
 
   useEffect(() => {
     if (auth.status !== "signed-in" || !auth.session) return;
@@ -30,6 +48,7 @@ export function SavedReport({ id }: { id: string }) {
     return () => { cancelled = true; };
   }, [auth.status, auth.session, id]);
 
+  const comparison = useComparison(outcome?.ok ? outcome : null, auth.session?.user.id ?? null, auth.session?.accessToken ?? null);
   const name = outcome?.ok ? `${outcome.saved.repository.owner}/${outcome.saved.repository.repo}` : null;
   useWorkspaceTitle(name);
   useEffect(() => {
@@ -70,11 +89,29 @@ export function SavedReport({ id }: { id: string }) {
     <>
       <div className="mb-4 print:hidden">
         <h1 className="sr-only">{name}</h1>
-        <p className="text-label text-muted-foreground">
-          Commit <span className="font-mono">{outcome.saved.repository.sha.slice(0, 7)}</span> · Saved report <code>{outcome.id}</code>, kept until {new Date(outcome.expiresAt).toLocaleDateString()}. <Link href="/app" className="text-primary hover:underline">Analyze another repository</Link>.
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-label text-muted-foreground">
+            Commit <span className="font-mono">{outcome.saved.repository.sha.slice(0, 7)}</span> · in your Scans until {new Date(outcome.expiresAt).toLocaleDateString()}.
+          </p>
+          {auth.session && (
+            <div className="flex flex-wrap items-center gap-2">
+              <ShareButton id={outcome.id} initial={outcome.isPublic} token={auth.session.accessToken} isPrivate={outcome.saved.repository.isPrivate === true} />
+              <FollowButton owner={outcome.saved.repository.owner} repo={outcome.saved.repository.repo} token={auth.session.accessToken} />
+            </div>
+          )}
+        </div>
+        {note && (
+          <p className="mt-1 text-label text-muted-foreground" data-testid="saved-note">
+            {note.cached ? "Reused a report of this commit from the last 24 hours, so it did not count toward your limit." : note.used !== null && note.limit !== null ? `${String(note.used)} of ${String(note.limit)} analyses used this hour.` : ""}
+          </p>
+        )}
       </div>
-      <ReportView response={response} elapsedMs={outcome.saved.timings.totalMs} />
+      {comparison && (
+        <div className="mb-4">
+          <ComparisonBand data={comparison} />
+        </div>
+      )}
+      <ReportView response={response} elapsedMs={outcome.saved.timings.totalMs} newIds={comparison ? new Set(comparison.comparison.newFindings.map((f) => f.id)) : undefined} />
       <div className="mt-6 print:hidden">
         <CiSnippet repository={outcome.saved.repository} />
       </div>

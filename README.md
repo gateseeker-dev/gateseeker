@@ -1,10 +1,59 @@
 # Gateseeker
 
+[![checked with Gateseeker](https://gateseeker.vercel.app/badge.svg)](https://gateseeker.vercel.app) [![npm](https://img.shields.io/npm/v/gateseeker)](https://www.npmjs.com/package/gateseeker)
+
 Security gate for AI-generated code. *(working description; branding and tagline are pending)*
 
 Gateseeker points at a project directory, checks the code for the security mistakes most common in AI-generated apps, asks [OSV](https://osv.dev) which installed npm versions have known vulnerabilities, ranks every finding with deterministic and auditable rules, and returns a gate verdict with an exit code you can wire into CI.
 
-**Status after Sprint 2b:** npm (`package-lock.json` v2/v3) and Composer (`composer.lock`) dependencies checked against OSV **and** a curated, human-approved advisory feed, with tag-rewrite verification against Packagist; structural supply-chain rules that compare a lockfile with a baseline; eight code-pattern rules for JavaScript/TypeScript projects. CLI only. See [docs/PRODUCT.md](docs/PRODUCT.md) for direction and `docs/SPRINT_*.md` for the scope this code implements.
+**Status after Sprint 5:** npm (`package-lock.json` v2/v3, `pnpm-lock.yaml` v9, `yarn.lock` from Yarn 1 and Berry) and Composer (`composer.lock`) dependencies checked against OSV **and** a curated, human-approved advisory feed, with tag-rewrite verification against Packagist; structural supply-chain rules that compare a lockfile with a baseline; eight code-pattern rules for JavaScript/TypeScript projects. Runs as a CLI, as a GitHub Action, and in the browser. See [docs/PRODUCT.md](docs/PRODUCT.md) for direction and `docs/SPRINT_*.md` for the scope this code implements.
+
+## Try it in the browser
+
+Sign in with GitHub at [gateseeker.vercel.app](https://gateseeker.vercel.app), paste the URL of a **public** GitHub repository and get the same report the CLI produces, usually in under a minute. Nothing to install.
+
+- Same engine, rules and wording as the CLI; pattern and supply-chain rules run in warn mode, and there is no baseline on the web.
+- The repository is downloaded as an archive and read as text: nothing is cloned, installed or executed. Symbolic links are never created or followed; the report lists them as not read. Archives over 50 MB compressed are refused (use the CLI for those).
+- Reports are saved for 30 days and open only for the account that produced them. Secrets are redacted before anything is saved.
+- 10 analyses per account per hour; the same commit within 24 hours reuses the saved report without counting.
+- Follow up to 10 repositories to get an email when a daily check finds new P1 or P2 findings; every email has a one-click unsubscribe.
+- What the site keeps and for how long is in the [privacy notice](https://gateseeker.vercel.app/privacy); the [terms of use](https://gateseeker.vercel.app/terms) cover the hosted service. Settings has a button that deletes the account and everything kept for it.
+
+The workspace links each report to the GitHub Action below, with the repository already filled in.
+
+## Use inside your AI agent
+
+**MCP server.** `gateseeker mcp` speaks the Model Context Protocol on stdin/stdout, so Claude Code, Cursor and other MCP clients can run the gate themselves. One tool, `gateseeker_scan` (optional `path`, `only`, `fail_on`), returning the same text report and the verdict. It only reads, and refuses paths outside the directory it was started in. Save as `.mcp.json` at the project root (Cursor: `.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "gateseeker": {
+      "command": "npx",
+      "args": ["-y", "gateseeker@1.1.0", "mcp"]
+    }
+  }
+}
+```
+
+The version is pinned on purpose: GSK-AGENT-003 flags MCP servers that run whatever version is newest.
+
+**Claude Code hook.** `gateseeker hook claude-code` reads a `PreToolUse` event on stdin; when the agent is about to run `git commit`, it runs the gate on the project and holds the commit (exit code 2, with what to fix, which Claude Code passes back to the agent) on `fail` or `incomplete`. Every other command passes without a scan. Install Gateseeker in the project (`npm install --save-dev gateseeker`) and add to `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "npx --no-install gateseeker hook claude-code" }]
+      }
+    ]
+  }
+}
+```
+
+Options: `--fail-on <P1..P4>` (default P2), `--patterns gate` (code-pattern findings also hold the commit; default warn, as in the Action) and `--allow-incomplete` (an incomplete check is reported but does not hold the commit). The hook runs the project's own installed copy, never a download (GSK-AGENT-002). Both snippets are tested against Gateseeker's own agent rules.
 
 ## Use in GitHub Actions
 
@@ -135,6 +184,10 @@ Findings: 18  (P1 13, P2 3, P3 2, P4 0)  dependencies 0, code patterns 18
        code:     SUPABASE_SERVICE_ROLE_KEY=eyJh…[219 chars]
        severity: CRITICAL (env file)   why: rule:GSK-SECRET-001, base:critical/direct-prod=P1, fix-available
        action:   Revoke the credential at the provider, move it to a server-side environment variable or secret manager, and purge it from git history.
+       impact:   Anyone who can read this code (the repository, the published bundle or a leaked copy) can use this Supabase service_role key as you.
+       steps:    1. Revoke or rotate the Supabase service_role key at the provider now: assume it is already exposed.
+                 2. Replace the literal with an environment variable read only in server code.
+                 3. If the repository is or was public, remove the value from the git history too.
   ...
 
 GATE: PASS (fail-on P2, patterns warn)
@@ -142,6 +195,10 @@ GATE: PASS (fail-on P2, patterns warn)
 ```
 
 Secrets are never printed: a matched credential is shown as its first four characters and its length.
+
+Each finding also carries plain-language fix guidance: `impact` (what could happen) and `manualSteps`, shown above, plus `aiPrompt` in the JSON report and on the web, a text to paste into Cursor, Lovable or Claude Code. The guidance is written per rule by the maintainers and is deterministic; no model generates it, and it is built only from the finding's location and names, never from the matched code.
+
+`pnpm-lock.yaml` (lockfileVersion 9, pnpm 9 and later) and `yarn.lock` (Yarn 1 and Berry) are read without running pnpm or Yarn. When a project has more than one npm lockfile, Gateseeker reads one, in the order `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, and lists the others as not read. Yarn lockfiles do not mark dev dependencies, so the root `package.json` decides what is direct and what is dev; without it every package counts as production. A project whose only lockfile is Bun's (`bun.lock`, `bun.lockb`) gets the verdict `incomplete` (exit code 2), because that format is not read yet and the absence of dependency findings cannot be asserted.
 
 ## Supply-chain signals (Composer and npm)
 
@@ -220,6 +277,13 @@ Rules are lexical and structural checks on text files. They never execute projec
 | `GSK-CORS-001` | `Access-Control-Allow-Origin: *` in headers or config, `cors({ origin: "*" })`, or default `cors()`. | LOW (HIGH when the same file enables credentials; without credentials a wildcard is informational, and the Supabase Edge Function template ships it by default) |
 | `GSK-ENV-001` | Root `.env*` file with non-public variables not covered by `.gitignore`. | MODERATE |
 | `GSK-BUILD-001` | `next.config` with `ignoreBuildErrors` or `ignoreDuringBuilds` set to true. | LOW |
+| `GSK-AGENT-001` | Committed AI-agent configuration that allows every shell command: Claude Code `Bash`, `Bash(*)`, `*` or `bypassPermissions`; Codex `approval_policy = "never"` with `danger-full-access`. | MODERATE |
+| `GSK-AGENT-002` | Agent hook (in settings, a script under an agent directory, or the install/start steps of `.cursor/environment.json`) that pipes a download into a shell or runs an unpinned package (`@latest`, `npx -y`). | HIGH |
+| `GSK-AGENT-003` | MCP server launched from an unpinned package, reached over plain `http://`, or with a literal secret in `env`/`headers` (value redacted). | MODERATE (HIGH for an inline secret) |
+| `GSK-AGENT-004` | Hidden text in files agents follow (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, agent commands and rules): invisible Unicode characters, an HTML comment with instructions, a long encoded run. | HIGH for invisible characters, MODERATE otherwise |
+| `GSK-AGENT-005` | `--no-verify`, `git commit -n` or `HUSKY=0` in agent instructions, `package.json` scripts or CI workflows. Lines that forbid it are skipped. | MODERATE |
+
+The `GSK-AGENT-*` rules (Track A1) were measured on 10 public repositories in `docs/VALIDATION_SPRINT_5.md` (3 of 3 final findings correct, after fixing two false positives and one false negative found there); the sample is small, so like every rule they run in warn mode. `.mcp.json` and `.claude/settings.json` are strict JSON with no comments, so findings in them cannot be suppressed inline; VS Code's `mcp.json` accepts comments and can.
 
 Code snippets in findings never carry hardcoded values: matched credentials are shown as their first four characters and length, dotenv values are hidden, and quoted string literals of eight or more characters next to a flagged variable are masked.
 
@@ -277,7 +341,10 @@ Unit tests never reach the network: the OSV client takes an injected `fetch`, an
 - [docs/SPRINT_0.md](docs/SPRINT_0.md), [docs/SPRINT_1.md](docs/SPRINT_1.md): scope and acceptance criteria implemented here.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): modules, data flow, trust boundaries, limitations.
 - [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md): assets, threat agents, attack surfaces, mitigations and the tests that cover them.
+- [docs/ROADMAP.md](docs/ROADMAP.md): proposed Sprints 5 to 9, UX problems found, decisions for the PO.
+- [docs/SPRINT_4.md](docs/SPRINT_4.md), [docs/DEPLOY.md](docs/DEPLOY.md): the hosted service and how it is deployed.
 - [docs/VALIDATION_SPRINT_1.md](docs/VALIDATION_SPRINT_1.md): results of the pattern rules on five real projects.
+- [docs/VALIDATION_SPRINT_5.md](docs/VALIDATION_SPRINT_5.md): results of the agent-configuration rules on ten real repositories.
 - [docs/UPSTREAM.md](docs/UPSTREAM.md): how approved advisories are submitted to OSV/GHSA.
 - [advisories/README.md](advisories/README.md): the curated advisory feed, its lifecycle and format.
 

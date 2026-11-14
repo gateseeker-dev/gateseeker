@@ -1,5 +1,5 @@
 import { Badge, Drawer, cn } from "@gateseeker/ui-kit";
-import { ShieldAlert, ShieldCheck, ShieldQuestion, ShieldX } from "lucide-react";
+import { ShieldAlert, ShieldCheck, ShieldQuestion, ShieldX, Sparkles } from "lucide-react";
 import { useCallback } from "react";
 
 import { formatWhen, type WorkspaceNotification } from "../notifications";
@@ -12,16 +12,19 @@ import { Link } from "../router";
  * links to its scan page. All texts are rendered as text nodes.
  */
 
-const ICON = { pass: ShieldCheck, fail: ShieldAlert, incomplete: ShieldQuestion, refused: ShieldX } as const;
-const TONE = { pass: "text-success", fail: "text-destructive", incomplete: "text-warning", refused: "text-muted-foreground" } as const;
+const ICON = { pass: ShieldCheck, fail: ShieldAlert, incomplete: ShieldQuestion, refused: ShieldX, update: Sparkles } as const;
+const TONE = { pass: "text-success", fail: "text-destructive", incomplete: "text-warning", refused: "text-muted-foreground", update: "text-primary" } as const;
 
 function status(n: WorkspaceNotification): keyof typeof ICON {
+  if (n.kind === "update") return "update";
   if (n.kind === "refused") return "refused";
   if (n.kind === "incomplete" || n.verdict === "incomplete") return "incomplete";
-  return n.verdict === "fail" ? "fail" : "pass";
+  // Urgent findings show as an alert even when the CI gate would pass (code checks in warning mode).
+  return n.verdict === "fail" || n.p1 + n.p2 > 0 ? "fail" : "pass";
 }
 
 function headline(n: WorkspaceNotification): string {
+  if (n.kind === "update") return n.subject.endsWith("updated") ? n.subject : `${n.subject} is running`;
   if (n.kind === "refused") return "Analysis refused";
   if (status(n) === "incomplete") return "Analysis incomplete";
   if (n.p1 + n.p2 === 0) return "Analysis finished: no P1 or P2 findings";
@@ -60,6 +63,7 @@ export function NotificationsPanel({ open, onClose, items, onMarkAllRead }: { op
                       {s === "incomplete" && <Badge variant="high">incomplete</Badge>}
                       {s === "pass" && <Badge variant="kind">pass</Badge>}
                       {s === "refused" && <Badge variant="kind">refused</Badge>}
+                      {s === "update" && <Badge variant="kind">update</Badge>}
                     </span>
                     <span className="text-body font-medium">{headline(n)}</span>
                     <span className="line-clamp-2 text-body text-muted-foreground">{n.message}</span>
@@ -76,6 +80,10 @@ export function NotificationsPanel({ open, onClose, items, onMarkAllRead }: { op
                 <li key={n.id} className="border-b last:border-b-0">
                   {n.reportId ? (
                     <Link href={`/r/${n.reportId}`} onClick={close} className={cn(row, "hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring")}>
+                      {body}
+                    </Link>
+                  ) : n.kind === "update" ? (
+                    <Link href="https://github.com/gateseeker-dev/gateseeker/blob/main/CHANGELOG.md" onClick={close} className={cn(row, "hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring")}>
                       {body}
                     </Link>
                   ) : (

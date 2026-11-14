@@ -1,5 +1,5 @@
-name: "Gateseeker"
-description: "Security gate for AI-generated code: known vulnerabilities (npm, Composer), supply-chain signals and insecure code patterns, with a configurable pass/fail gate."
+name: "Gateseeker Security Gate"
+description: "Security gate for AI-generated code: known vulnerabilities, supply-chain signals, insecure patterns, pass/fail gate."
 author: "Gateseeker"
 branding:
   icon: "shield"
@@ -41,7 +41,7 @@ inputs:
     default: ".gateseeker"
   version:
     description: "gateseeker npm version to run. Pinned to the version this action was released with."
-    default: "1.0.0-beta.7"
+    default: "1.1.0"
   local-build:
     description: "Build and run the scanner from this action's own checkout instead of npm (used by the Gateseeker repository itself)."
     default: "false"

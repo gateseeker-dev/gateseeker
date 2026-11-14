@@ -1,10 +1,13 @@
-import type { ReportResponseOk, ScanResponseError, ScanResponseOk } from "gateseeker/dist/web/handler.js";
+import type { AdminAccountResponse, AdminAccountsResponse, AdminOverviewResponse, FollowsResponse, FunnelResponse, InstallationBoundResponse, InstallationRemovedResponse, InstallationsResponse, InstallUrlResponse, ReportResponseOk, ScanResponseError, ScanResponseOk, ScansResponse, ShareResponse } from "gateseeker/dist/web/handler.js";
 
-export type { PublicReport, ReportResponseOk, SavedScan, ScanResponseError, ScanResponseOk } from "gateseeker/dist/web/handler.js";
+export type { AdminAccountResponse, AdminAccountsResponse, AdminOverviewResponse, FollowView, FollowsResponse, FunnelResponse, InstallationBoundResponse, InstallationRemovedResponse, InstallationsResponse, InstallationView, InstallUrlResponse, PublicReport, ReportResponseOk, SavedScan, ScanHistoryEntry, ScanResponseError, ScanResponseOk, ScansResponse, ShareResponse } from "gateseeker/dist/web/handler.js";
 export type { Finding } from "gateseeker/dist/types.js";
 
 export type ScanOutcome = ScanResponseOk | ScanResponseError;
 export type ReportOutcome = ReportResponseOk | ScanResponseError;
+
+/** Fired on `window` when the service answers 401 to a call made with a session token: the session is gone (expired, or ended elsewhere). */
+export const SESSION_INVALID_EVENT = "gateseeker:session-invalid";
 
 async function call<T>(input: string, init: RequestInit, token: string | null): Promise<T | ScanResponseError> {
   try {
@@ -12,7 +15,11 @@ async function call<T>(input: string, init: RequestInit, token: string | null): 
     const res = await fetch(input, { ...init, headers });
     const text = await res.text();
     try {
-      return JSON.parse(text) as T | ScanResponseError;
+      const body = JSON.parse(text) as T | ScanResponseError;
+      if (token && res.status === 401 && typeof body === "object" && body !== null && "ok" in body && !body.ok && (body as ScanResponseError).error.code === "unauthorized") {
+        window.dispatchEvent(new Event(SESSION_INVALID_EVENT));
+      }
+      return body;
     } catch {
       return { ok: false, error: { code: "upstream-error", message: `The service answered HTTP ${String(res.status)} without a readable body.` } };
     }
@@ -27,7 +34,75 @@ export function scanRepository(url: string, token: string | null, signal?: Abort
   return call<ScanResponseOk>("/api/scan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url }), ...(signal ? { signal } : {}) }, token);
 }
 
+/** The signed-in account's analysis history, newest first. */
+export function fetchScans(token: string): Promise<ScansResponse | ScanResponseError> {
+  return call<ScansResponse>("/api/scans", { method: "GET" }, token);
+}
+
+/** Followed repositories of the signed-in account; POST follows and DELETE unfollows {owner, repo}. */
+export function callFollows(method: "GET" | "POST" | "DELETE", token: string, target?: { owner: string; repo: string }): Promise<FollowsResponse | ScanResponseError> {
+  return call<FollowsResponse>("/api/follows", { method, ...(target ? { headers: { "content-type": "application/json" }, body: JSON.stringify(target) } : {}) }, token);
+}
+
 /** A saved report of the signed-in account. */
 export function fetchReport(id: string, token: string): Promise<ReportOutcome> {
   return call<ReportResponseOk>(`/api/reports/${encodeURIComponent(id)}`, { method: "GET" }, token);
+}
+
+/** The example repository's report, for visitors who have not signed in. */
+export function fetchExample(signal?: AbortSignal): Promise<ScanOutcome> {
+  return call<ScanResponseOk>("/api/example", { method: "GET", ...(signal ? { signal } : {}) }, null);
+}
+
+/** A report its owner shared; no session. */
+export function fetchPublicReport(id: string): Promise<ReportOutcome> {
+  return call<ReportResponseOk>(`/api/public/${encodeURIComponent(id)}`, { method: "GET" }, null);
+}
+
+/** Shares (POST) or unshares (DELETE) one of the signed-in account's reports. */
+export function shareReport(id: string, token: string, share: boolean): Promise<ShareResponse | ScanResponseError> {
+  return call<ShareResponse>(`/api/reports/${encodeURIComponent(id)}/share`, { method: share ? "POST" : "DELETE" }, token);
+}
+
+/** Product counters; 404 for everyone but the configured admin logins. */
+export function fetchFunnel(token: string): Promise<FunnelResponse | ScanResponseError> {
+  return call<FunnelResponse>("/api/funnel", { method: "GET" }, token);
+}
+
+/** Admin master (docs/SPRINT_7.md): 404 for everyone but the configured admin logins. */
+export function fetchAdminOverview(token: string): Promise<AdminOverviewResponse | ScanResponseError> {
+  return call<AdminOverviewResponse>("/api/admin/overview", { method: "GET" }, token);
+}
+
+export function fetchAdminAccounts(token: string, before: string | null): Promise<AdminAccountsResponse | ScanResponseError> {
+  return call<AdminAccountsResponse>(`/api/admin/accounts${before ? `?before=${encodeURIComponent(before)}` : ""}`, { method: "GET" }, token);
+}
+
+export function fetchAdminAccount(token: string, id: string): Promise<AdminAccountResponse | ScanResponseError> {
+  return call<AdminAccountResponse>(`/api/admin/accounts/${encodeURIComponent(id)}`, { method: "GET" }, token);
+}
+
+/** The GitHub screen to authorize the App for one repository ("owner/name"), with the signed state (docs/SPRINT_8.md). */
+export function fetchInstallUrl(token: string, repo: string): Promise<InstallUrlResponse | ScanResponseError> {
+  return call<InstallUrlResponse>(`/api/github/install?repo=${encodeURIComponent(repo)}`, { method: "GET" }, token);
+}
+
+/** The GitHub App installations bound to the signed-in account. */
+export function fetchInstallations(token: string): Promise<InstallationsResponse | ScanResponseError> {
+  return call<InstallationsResponse>("/api/github/installations", { method: "GET" }, token);
+}
+
+/** Binds the installation GitHub sent the person back with; `state` is the one the service signed for the install link. */
+export function bindInstallation(token: string, installationId: number, state: string): Promise<InstallationBoundResponse | ScanResponseError> {
+  return call<InstallationBoundResponse>("/api/github/installations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ installationId, state }) }, token);
+}
+
+/** Makes the service forget an installation (the App stays installed on GitHub until uninstalled there). */
+export function removeInstallation(token: string, installationId: number): Promise<InstallationRemovedResponse | ScanResponseError> {
+  return call<InstallationRemovedResponse>(`/api/github/installations/${String(installationId)}`, { method: "DELETE" }, token);
+}
+
+/** Deletes the signed-in account and everything the service keeps for it; `confirm` is the GitHub login as typed. */
+export function deleteAccount(token: string, confirm: string): Promise<{ ok: true } | ScanResponseError> {
+  return call<{ ok: true }>("/api/account", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirm }) }, token);
 }

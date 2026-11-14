@@ -4,26 +4,34 @@ import { useEffect, useState } from "react";
 
 import { AuthProvider, useAuth } from "./auth-context";
 import { PageSkeleton, ReportSkeleton } from "./components/Skeletons";
+import { countVisit } from "./funnel";
 
 import { About } from "./pages/About";
-import { AppDemo } from "./pages/AppDemo";
+import { AnalyzePage } from "./pages/Analyze";
 import { Dashboard } from "./pages/Dashboard";
 import { DesignSystem } from "./pages/DesignSystem";
 import { GetStarted } from "./pages/GetStarted";
 import { Home } from "./pages/Home";
 import { HowItWorks } from "./pages/HowItWorks";
+import { SupabaseRls } from "./pages/SupabaseRls";
+import { Privacy, Terms } from "./pages/Legal";
 import { Login } from "./pages/Login";
 import { Resources, WorkspaceResources } from "./pages/Resources";
+import { AdminAccountPage, AdminAccountsPage, AdminOverviewPage } from "./pages/Admin";
+import { Advisories, AdvisoryPage } from "./pages/Advisories";
+import { PublicReportPage } from "./pages/PublicReport";
 import { SavedReport } from "./pages/SavedReport";
 import { Scans } from "./pages/Scans";
+import { GitHubSetupPage } from "./pages/GitHubSetup";
 import { SettingsPage } from "./pages/Settings";
+import { Unsubscribe } from "./pages/Unsubscribe";
 import { Link, Router, navigate, usePath } from "./router";
 import { Workspace, type WorkspacePage } from "./Workspace";
 
 /**
  * Site shell: sticky header with the sections the PO asked for (Home, How it
  * works, About, Resources), "Log in" and the "Get started" call to action, the
- * routed page, and a three-column footer. The demo workspace (/app) is
+ * routed page, and a footer with product, project and legal links. The demo workspace (/app) is
  * provisional and unguarded until accounts exist.
  */
 
@@ -41,12 +49,20 @@ const TITLES: Record<string, string> = {
   "/resources": "Resources · Gateseeker",
   "/get-started": "Get started · Gateseeker",
   "/login": "Log in · Gateseeker",
+  "/unsubscribe": "Stop following · Gateseeker",
+  "/privacy": "Privacy · Gateseeker",
+  "/supabase-rls": "Is your Supabase database open? · Gateseeker",
+  "/terms": "Terms of use · Gateseeker",
+  "/advisories": "Curated advisories · Gateseeker",
   "/app": "Analyze a repository · Gateseeker",
   "/app/design-system": "Design system · Gateseeker",
   "/app/settings": "Settings · Gateseeker",
+  "/app/github/setup": "GitHub access · Gateseeker",
   "/app/dashboard": "Dashboard · Gateseeker",
   "/app/scans": "Scans · Gateseeker",
   "/app/resources": "Resources · Gateseeker",
+  "/app/admin": "Admin · Gateseeker",
+  "/app/admin/accounts": "Accounts · Gateseeker",
 };
 
 /* The public site exists only for signed-out visitors; a session sends these to the workspace. /login forwards on its own. */
@@ -56,6 +72,9 @@ const WORKSPACE_COUNTERPART: Record<string, string> = { "/resources": "/app/reso
 const WORKSPACE_HOME = "/app/dashboard";
 
 const REPORT_ROUTE = /^\/r\/([A-Za-z0-9-]{1,64})$/;
+const PUBLIC_REPORT_ROUTE = /^\/p\/([A-Za-z0-9-]{1,64})$/;
+const ADVISORY_ROUTE = /^\/advisories\/(GSK-ADV-\d{4}-\d{4})$/;
+const ADMIN_ACCOUNT_ROUTE = /^\/app\/admin\/accounts\/([0-9a-f-]{36})$/i;
 
 export function App() {
   return (
@@ -80,10 +99,16 @@ function Shell() {
   const auth = useAuth();
   const [open, setOpen] = useState(false);
   const reportId = REPORT_ROUTE.exec(path)?.[1] ?? null;
+  const publicReportId = PUBLIC_REPORT_ROUTE.exec(path)?.[1] ?? null;
+  const advisoryId = ADVISORY_ROUTE.exec(path)?.[1] ?? null;
+  const adminAccountId = ADMIN_ACCOUNT_ROUTE.exec(path)?.[1] ?? null;
   useEffect(() => {
-    document.title = TITLES[path] ?? (reportId ? "Scan · Gateseeker" : "Gateseeker");
+    document.title = TITLES[path] ?? (reportId ? "Scan · Gateseeker" : publicReportId ? "Shared report · Gateseeker" : advisoryId ? `${advisoryId} · Gateseeker` : "Gateseeker");
     setOpen(false);
   }, [path, reportId]);
+  useEffect(() => {
+    if (auth.status === "signed-out") countVisit();
+  }, [auth.status]);
   useEffect(() => {
     if (auth.status === "signed-out" && path === "/app/resources") navigate("/resources", { replace: true });
     if (auth.status !== "signed-in") return;
@@ -98,17 +123,31 @@ function Shell() {
   else if (path === "/resources") page = <Resources />;
   else if (path === "/get-started") page = <GetStarted />;
   else if (path === "/login") page = <Login />;
-  else if (path === "/app") page = <AppDemo />;
+  else if (path === "/unsubscribe") page = <Unsubscribe />;
+  else if (path === "/privacy") page = <Privacy />;
+  else if (path === "/supabase-rls") page = <SupabaseRls />;
+  else if (path === "/terms") page = <Terms />;
+  else if (path === "/advisories") page = <Advisories />;
+  else if (advisoryId) page = <AdvisoryPage id={advisoryId} />;
+  else if (publicReportId) page = <PublicReportPage id={publicReportId} />;
+  else if (path === "/app") page = <AnalyzePage />;
   else if (path === "/app/design-system") page = <DesignSystem />;
   else if (path === "/app/settings") page = <SettingsPage />;
+  else if (path === "/app/github/setup") page = <GitHubSetupPage />;
   else if (path === "/app/dashboard") page = <Dashboard />;
   else if (path === "/app/scans") page = <Scans />;
   else if (path === "/app/resources") page = <WorkspaceResources />;
+  else if (path === "/app/admin") page = <AdminOverviewPage />;
+  else if (path === "/app/admin/accounts") page = <AdminAccountsPage />;
+  else if (adminAccountId) page = <AdminAccountPage id={adminAccountId} />;
   else if (reportId) page = <SavedReport id={reportId} />;
 
   const signedIn = auth.status === "signed-in" && auth.session !== null;
   // Signed in, the workspace pages get the application frame instead of the site header and footer.
-  const workspacePage: WorkspacePage | null = path === "/app" ? "analyze" : path === "/app/design-system" ? "design-system" : path === "/app/settings" ? "settings" : path === "/app/dashboard" ? "dashboard" : path === "/app/scans" ? "scans" : path === "/app/resources" ? "resources" : reportId ? "scan" : null;
+  // The analyze view is full screen: its own frame, no sidebar and no site header.
+  if (path === "/app") return page;
+  const workspacePage: WorkspacePage | null =
+    path === "/app/design-system" ? "design-system" : path === "/app/settings" ? "settings" : path === "/app/github/setup" ? "github-setup" : path === "/app/dashboard" ? "dashboard" : path === "/app/scans" ? "scans" : path === "/app/resources" ? "resources" : path === "/app/admin" ? "admin" : path === "/app/admin/accounts" ? "admin-accounts" : adminAccountId ? "admin-account" : reportId ? "scan" : null;
   if (signedIn && workspacePage) return <Workspace page={workspacePage}>{page}</Workspace>;
   // A public page must not flash for a signed-in visitor: render nothing until the session is known, then redirect (effect above).
   if ((PUBLIC_ROUTES.has(path) || path in WORKSPACE_COUNTERPART) && (auth.status === "loading" || signedIn)) return <div className="min-h-dvh bg-background" />;
@@ -195,13 +234,14 @@ function Shell() {
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10 sm:px-6 sm:py-14">{page}</main>
 
       <footer className="border-t bg-card/40">
-        <div className="mx-auto grid max-w-5xl gap-8 px-4 py-10 text-sm sm:grid-cols-[1.6fr_1fr_1fr] sm:px-6">
+        <div className="mx-auto grid max-w-5xl gap-8 px-4 py-10 text-sm sm:grid-cols-[1.6fr_1fr_1fr_1fr] sm:px-6">
           <div className="grid content-start gap-3">
             <Brand />
             <p className="max-w-sm text-muted-foreground">Security gate for AI-generated code. Reads your repository, never runs it, and tells you which findings matter and why.</p>
           </div>
-          <FooterColumn title="Product" links={[{ href: "/how-it-works", label: "How it works" }, { href: "/get-started", label: "Get started" }, { href: "/resources", label: "Rules and limits" }, { href: "/login", label: "Log in" }]} />
+          <FooterColumn title="Product" links={[{ href: "/how-it-works", label: "How it works" }, { href: "/get-started", label: "Get started" }, { href: "/resources", label: "Rules and limits" }, { href: "/supabase-rls", label: "Supabase RLS check" }, { href: "/login", label: "Log in" }]} />
           <FooterColumn title="Project" links={[{ href: "/about", label: "About" }, { href: "https://github.com/gateseeker-dev/gateseeker", label: "GitHub" }, { href: "https://www.npmjs.com/package/gateseeker", label: "npm" }, { href: "https://github.com/gateseeker-dev/gateseeker/blob/main/SECURITY.md", label: "Security policy" }]} />
+          <FooterColumn title="Legal" links={[{ href: "/privacy", label: "Privacy" }, { href: "/terms", label: "Terms of use" }]} />
         </div>
         <div className="border-t">
           <p className="mx-auto max-w-5xl px-4 py-4 text-xs text-muted-foreground sm:px-6">

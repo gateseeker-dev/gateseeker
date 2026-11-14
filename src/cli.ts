@@ -2,7 +2,9 @@
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { runClaudeCodeHook } from "./agent-hook.js";
 import { loadAdvisories } from "./intel/advisories.js";
+import { runMcpServer } from "./mcp.js";
 import { DEFAULT_PARSER_LIMITS } from "./parser/lockfile.js";
 import { DEFAULT_WALK_LIMITS } from "./patterns/walker.js";
 import { renderSarif } from "./report/sarif.js";
@@ -10,6 +12,7 @@ import { renderSummary } from "./report/summary.js";
 import { renderText } from "./report/text.js";
 import { PRIORITIES } from "./rules/priority.js";
 import { scan, scanDirectory, type ScanResult } from "./scan.js";
+import { checkForUpdate, updateLine } from "./update-check.js";
 import { GATESEEKER_VERSION } from "./version.js";
 
 /**
@@ -23,11 +26,19 @@ export const EXIT = { pass: 0, fail: 1, incomplete: 2, usage: 3 } as const;
 
 const USAGE = `gateseeker ${GATESEEKER_VERSION}
 
-Usage: gateseeker scan <project-dir | package-lock.json | composer.lock> [options]
+Usage: gateseeker scan <project-dir | lockfile> [options]
+       gateseeker mcp [--root <project-dir>]
+       gateseeker hook claude-code [--fail-on <P1..P4>] [--patterns <warn|gate>] [--allow-incomplete]
 
-  A directory runs the code-pattern rules and, for every package-lock.json or
-  composer.lock at its root, the dependency analysis. A lockfile path runs
-  dependencies only.
+  mcp: a Model Context Protocol server on stdin/stdout with one tool,
+  gateseeker_scan, for coding agents (Claude Code, Cursor). Scans stay inside
+  the project directory (default: the current one).
+  hook claude-code: a PreToolUse hook that runs the gate before the agent's
+  "git commit" and blocks the commit on fail or incomplete (exit code 2).
+
+  A directory runs the code-pattern rules and the dependency analysis for the
+  lockfiles at its root: one of package-lock.json, pnpm-lock.yaml or yarn.lock
+  (in that order), and composer.lock. A lockfile path runs dependencies only.
 
 Options:
   --format <text|json|sarif|summary>
@@ -49,10 +60,12 @@ Options:
   --max-size <bytes>        Reject lockfiles larger than this (default: ${DEFAULT_PARSER_LIMITS.maxBytes})
   --max-deps <n>            Reject lockfiles with more packages than this (default: ${DEFAULT_PARSER_LIMITS.maxDependencies})
   --max-files <n>           Abort directory scans with more files (default: ${DEFAULT_WALK_LIMITS.maxFiles})
-  --max-file-size <bytes>   Abort directory scans on a larger text file (default: ${DEFAULT_WALK_LIMITS.maxFileBytes})
+  --max-file-size <bytes>   Skip (and list) larger files in directory scans (default: ${DEFAULT_WALK_LIMITS.maxFileBytes})
   --advisories <file>       Use this curated advisory set (JSON) instead of the bundled one
   --timeout <ms>            Per-request timeout for the OSV API (default: 10000)
   --concurrency <n>         Maximum simultaneous OSV requests (default: 5)
+  --no-update-check         Do not read the npm registry after a text run to report a newer version
+                            (also GATESEEKER_NO_UPDATE_CHECK=1). Never changes the verdict.
   --help, -h                Show this help
   --version, -v             Show version
 
@@ -61,7 +74,12 @@ Exit codes: 0 pass, 1 fail, 2 incomplete, 3 usage or rejected input.
 
 interface Io {
   stdout: (s: string) => void;
+  /** For `mcp` and `hook`, which read from stdin; tests pass a stream. */
+  stdin?: NodeJS.ReadableStream;
   stderr: (s: string) => void;
+  /** When given, a text run ends with one read of the npm registry to say whether a newer version exists (never in tests: they pass none or a double). */
+  updateFetch?: typeof fetch;
+  env?: Record<string, string | undefined>;
 }
 
 class UsageError extends Error {}
@@ -98,13 +116,49 @@ const optionSpec = {
   advisories: { type: "string" },
   timeout: { type: "string" },
   concurrency: { type: "string" },
+  "no-update-check": { type: "boolean" },
   // Undocumented: lets tests point the client at a local server.
   "osv-endpoint": { type: "string" },
+  "registry-url": { type: "string" },
   help: { type: "boolean", short: "h" },
   version: { type: "boolean", short: "v" },
 } as const;
 
+async function readAll(stream: NodeJS.ReadableStream, max = 1024 * 1024): Promise<string> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of stream) {
+    const b = typeof chunk === "string" ? Buffer.from(chunk) : (chunk);
+    size += b.length;
+    if (size > max) break;
+    chunks.push(b);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function agentCommand(argv: string[], io: Io): Promise<number> {
+  const [command, ...rest] = argv;
+  try {
+    if (command === "mcp") {
+      const { values } = parseArgs({ args: rest, options: { root: { type: "string" } }, allowPositionals: false });
+      await runMcpServer({ root: resolve(values.root ?? ".") }, { input: io.stdin ?? process.stdin, output: io.stdout });
+      return EXIT.pass;
+    }
+    const { values, positionals } = parseArgs({ args: rest, options: { "fail-on": { type: "string" }, patterns: { type: "string" }, "allow-incomplete": { type: "boolean" } }, allowPositionals: true });
+    if (positionals.length !== 1 || positionals[0] !== "claude-code") throw new UsageError("Expected: gateseeker hook claude-code");
+    const failOn = oneOf(values["fail-on"]?.toUpperCase(), PRIORITIES, "fail-on", "P2");
+    const patternsMode = oneOf(values.patterns, ["warn", "gate"] as const, "patterns", "warn");
+    return await runClaudeCodeHook(await readAll(io.stdin ?? process.stdin), { failOn, patternsMode, allowIncomplete: values["allow-incomplete"] === true }, io.stderr);
+  } catch (err) {
+    io.stderr(`${err instanceof Error ? err.message : String(err)}
+
+${USAGE}`);
+    return EXIT.usage;
+  }
+}
+
 export async function main(argv: string[], io: Io): Promise<number> {
+  if (argv[0] === "mcp" || argv[0] === "hook") return agentCommand(argv, io);
   let parsed: ReturnType<typeof parseArgs<{ options: typeof optionSpec; allowPositionals: true }>>;
   try {
     parsed = parseArgs({ args: argv, options: optionSpec, allowPositionals: true });
@@ -125,7 +179,7 @@ export async function main(argv: string[], io: Io): Promise<number> {
 
   const [command, target] = positionals;
   if (command !== "scan" || target === undefined || positionals.length !== 2) {
-    io.stderr(`Expected: gateseeker scan <project-dir | package-lock.json>\n\n${USAGE}`);
+    io.stderr(`Expected: gateseeker scan <project-dir | lockfile>\n\n${USAGE}`);
     return EXIT.usage;
   }
 
@@ -201,9 +255,12 @@ export async function main(argv: string[], io: Io): Promise<number> {
       if (only !== undefined) throw new UsageError("--only applies to directory scans; a lockfile path always runs the dependency analysis only.");
       const content = await readFile(targetPath, "utf8");
       let manifestContent: string | null = null;
-      if (targetPath.toLowerCase().endsWith("composer.lock")) {
+      const lower = targetPath.toLowerCase();
+      // Composer and Yarn need the manifest next to the lockfile (direct and dev dependencies); pnpm only takes the project name from it.
+      const manifestName = lower.endsWith("composer.lock") ? "composer.json" : lower.endsWith("yarn.lock") || lower.endsWith("pnpm-lock.yaml") ? "package.json" : null;
+      if (manifestName !== null) {
         try {
-          manifestContent = await readFile(resolve(targetPath, "..", "composer.json"), "utf8");
+          manifestContent = await readFile(resolve(targetPath, "..", manifestName), "utf8");
         } catch {
           manifestContent = null;
         }
@@ -220,6 +277,13 @@ export async function main(argv: string[], io: Io): Promise<number> {
     if (values.output !== undefined) await writeFile(resolve(values.output), `${json}\n`, "utf8");
     const rendered = format === "json" ? json : format === "sarif" ? JSON.stringify(renderSarif(result.report), null, 2) : format === "summary" ? renderSummary(result.report) : renderText(result.report);
     io.stdout(`${rendered}\n`);
+
+    // After the verdict, never before it, and only in the human-readable format.
+    const env = io.env ?? process.env;
+    if (format === "text" && io.updateFetch && values["no-update-check"] !== true && env.GATESEEKER_NO_UPDATE_CHECK !== "1") {
+      const latest = await checkForUpdate({ current: GATESEEKER_VERSION, fetch: io.updateFetch, ...(values["registry-url"] !== undefined ? { registry: values["registry-url"] } : {}) });
+      if (latest !== null) io.stderr(`${updateLine(GATESEEKER_VERSION, latest)}\n`);
+    }
 
     return EXIT[result.report.gate.verdict];
   } catch (err) {
@@ -240,6 +304,8 @@ if (isDirectRun || process.env.GATESEEKER_CLI === "1") {
   const code = await main(process.argv.slice(2), {
     stdout: (s) => process.stdout.write(s),
     stderr: (s) => process.stderr.write(s),
+    stdin: process.stdin,
+    updateFetch: globalThis.fetch,
   });
   process.exitCode = code;
 }

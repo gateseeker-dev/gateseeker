@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+import type { SignedFeed } from "../intel/feed-signature.js";
+import type { PendingAlert } from "./emails.js";
+import { VISIT_EVENT_KINDS } from "./visit-source.js";
+
 /**
  * Persistence for the hosted service: saved reports (30-day retention), the
  * per-user scan quota and the per-commit cache. Two implementations: in
@@ -28,9 +32,112 @@ export interface StoredReport {
   body: unknown;
   createdAt: string;
   expiresAt: string;
+  /** Opened by anyone with the link (/p/<id>) once the owner shared it. */
+  isPublic: boolean;
 }
 
-export type NewReport = Omit<StoredReport, "id" | "createdAt">;
+export interface EventCount {
+  day: string;
+  kind: EventKind;
+  count: number;
+}
+
+/** One account that used the service (Sprint 7): login and access dates, nothing else. */
+export interface AccountRecord {
+  userId: string;
+  login: string;
+  firstSeen: string;
+  lastSeen: string;
+  scans: number;
+  follows: number;
+}
+
+export interface AdminOverview {
+  accounts: number;
+  active7: number;
+  active30: number;
+  new7: number;
+  new30: number;
+  scans7: number;
+  scans30: number;
+  follows: number;
+  sharedReports: number;
+  /** GitHub App installations bound to accounts (Sprint 8); 0 before that migration. */
+  installations: number;
+}
+
+/** A GitHub App installation an account bound (docs/SPRINT_8.md): the number and whose it is, nothing that grants access by itself. */
+export interface InstallationRecord {
+  userId: string;
+  installationId: number;
+  accountLogin: string;
+  accountType: "User" | "Organization";
+  createdAt: string;
+}
+
+export interface SharedReportSummary {
+  id: string;
+  owner: string;
+  repo: string;
+  sha: string;
+  createdAt: string;
+}
+
+export type NewReport = Omit<StoredReport, "id" | "createdAt" | "isPublic">;
+
+/** History line: what the Dashboard and Scans show, without the report body (which expires sooner). */
+export interface ScanSummary {
+  id: string;
+  userId: string;
+  owner: string;
+  repo: string;
+  sha: string;
+  verdict: "pass" | "fail" | "incomplete";
+  byPriority: { P1: number; P2: number; P3: number; P4: number };
+  reportId: string | null;
+  createdAt: string;
+}
+
+export type NewScanSummary = Omit<ScanSummary, "id" | "createdAt">;
+
+export const SCAN_HISTORY_DAYS = 180;
+
+/** A repository an account follows (docs/SPRINT_6.md 3.3): what the daily monitor checks and what it found last. */
+export interface FollowRecord {
+  id: string;
+  userId: string;
+  owner: string;
+  repo: string;
+  createdAt: string;
+  lastScanAt: string | null;
+  lastReportId: string | null;
+  lastVerdict: "pass" | "fail" | "incomplete" | null;
+  /** New P1/P2 findings in the last rescan compared with the one before (what an alert email would report). */
+  lastNewUrgent: number;
+  /** Rescans in a row that could not complete. */
+  failures: number;
+  /** Set when monitoring stopped (the repository became private or was deleted). */
+  pausedReason: string | null;
+  /** Ecosystems of the repository at its last rescan ("npm", "Packagist"); null before the first. */
+  ecosystems: string[] | null;
+  /** Set when a newly published advisory for one of its ecosystems put it in front of the daily order (docs/SPRINT_6.md 3.4). */
+  queuedAt: string | null;
+  /** Alert waiting to be sent (one email per repository per day, under the daily cap). */
+  pendingAlert: PendingAlert | null;
+  lastAlertAt: string | null;
+}
+
+export type FollowPatch = Partial<Pick<FollowRecord, "lastScanAt" | "lastReportId" | "lastVerdict" | "lastNewUrgent" | "failures" | "pausedReason" | "ecosystems" | "queuedAt" | "pendingAlert" | "lastAlertAt">>;
+
+/** `created` is false when the account already followed the repository. */
+export type FollowResult = { ok: true; created: boolean; follow: FollowRecord } | { ok: false; reason: "limit" };
+
+/** Aggregate page events (login funnel): counted per UTC day, no user, IP or user agent. */
+/** Kinds the page may send to POST /api/event. */
+export const CLIENT_EVENT_KINDS = ["login_view", "login_start", "signin_complete", "email_click", "example_view", "public_report_view", "update_banner_shown", "update_banner_reload", "github_install_start", "github_install_done", ...VISIT_EVENT_KINDS] as const;
+/** All kinds, including the ones only the service counts (monitor and emails, docs/SPRINT_6.md 3.7). */
+export const EVENT_KINDS = [...CLIENT_EVENT_KINDS, "rescan_complete", "rescan_incomplete", "rescan_failed", "email_follow_confirm", "email_alert", "email_paused", "email_capped", "email_failed", "unsubscribe"] as const;
+export type EventKind = (typeof EVENT_KINDS)[number];
 
 export interface ReportStore {
   claimQuota(userId: string, limit: number, windowSeconds: number): Promise<QuotaDecision>;
@@ -41,16 +148,91 @@ export interface ReportStore {
   get(id: string, userId: string): Promise<StoredReport | null>;
   /** Deletes reports past their `expiresAt`; returns how many. */
   purgeExpired(): Promise<number>;
+  /** One line of history per finished analysis (docs/SPRINT_6.md 3.1); kept SCAN_HISTORY_DAYS. */
+  recordScan(scan: NewScanSummary): Promise<void>;
+  /** The account's history, newest first. */
+  listScans(userId: string, limit: number): Promise<ScanSummary[]>;
+  /** Follows a repository; idempotent; refuses past `limit` repositories per account. */
+  follow(userId: string, owner: string, repo: string, limit: number): Promise<FollowResult>;
+  unfollow(userId: string, owner: string, repo: string): Promise<void>;
+  listFollows(userId: string): Promise<FollowRecord[]>;
+  /** Follows not paused that are queued or not rescanned since `before`: queued first, then never-scanned, then oldest. */
+  dueFollows(before: string, limit: number): Promise<FollowRecord[]>;
+  updateFollow(id: string, patch: FollowPatch): Promise<void>;
+  /** Queues the follows (not paused) whose last rescan saw one of these ecosystems; returns how many. */
+  queueFollows(ecosystems: string[], at: string): Promise<number>;
+  /** A follow by id (the unsubscribe link carries only the id and its token). */
+  getFollow(id: string): Promise<FollowRecord | null>;
+  /** Deletes a follow by id; true when there was one. */
+  deleteFollow(id: string): Promise<boolean>;
+  /** Takes one email from today's (UTC) allowance; false once `limit` emails were sent today. */
+  claimEmail(limit: number): Promise<boolean>;
+  /** Stores a published advisory set as received (already verified by the handler). */
+  saveFeed(feed: SignedFeed): Promise<void>;
+  /** The most recently published advisory set, unverified: the caller checks the signature. */
+  latestFeed(): Promise<SignedFeed | null>;
+  /** Adds one to today's counter for this kind. */
+  countEvent(kind: EventKind): Promise<void>;
+  /** Deletes the account and everything kept for it: reports, history, follows, quota, then the sign-in itself. */
+  deleteAccount(userId: string): Promise<void>;
+  /** Shares or unshares a report; only its owner can. Returns the report, or null when it is not theirs. */
+  setPublic(id: string, userId: string, isPublic: boolean): Promise<StoredReport | null>;
+  /** A report by id, only when its owner shared it. */
+  getPublic(id: string): Promise<StoredReport | null>;
+  /** Daily counters since `sinceDay` (YYYY-MM-DD, inclusive), for the product counters panel. */
+  listEvents(sinceDay: string): Promise<EventCount[]>;
+  /** Analyses recorded since an instant, and distinct accounts among them (capped at 1000 rows). */
+  countScans(since: string): Promise<{ scans: number; accounts: number }>;
+  /** Follows not paused, across all accounts. */
+  countFollows(): Promise<number>;
+  /** Records an access of this account (first and last seen); the stored row changes at most once every 5 minutes. */
+  touchAccount(userId: string, login: string): Promise<void>;
+  adminOverview(): Promise<AdminOverview>;
+  /** Accounts by last access, newest first; `before` pages (last_seen strictly older). */
+  listAccounts(limit: number, before: string | null): Promise<AccountRecord[]>;
+  getAccount(userId: string): Promise<AccountRecord | null>;
+  /** Reports of one account that it shared; metadata only. */
+  listSharedReports(userId: string): Promise<SharedReportSummary[]>;
+  /** Binds an installation to an account (idempotent); the login and type are refreshed. */
+  addInstallation(record: Omit<InstallationRecord, "createdAt">): Promise<void>;
+  listInstallations(userId: string): Promise<InstallationRecord[]>;
+  /** Unbinds an installation from an account; true when there was one. The App stays installed on GitHub. */
+  removeInstallation(userId: string, installationId: number): Promise<boolean>;
+}
+
+export const TOUCH_INTERVAL_MS = 5 * 60 * 1000;
+
+/** Queued follows first, earliest queued first; unqueued ones after (the "nulls last" of the Supabase query). */
+function byQueue(a: string | null, b: string | null): number {
+  if (a === b) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return a < b ? -1 : 1;
 }
 
 export interface StoreClock {
   now?: () => Date;
 }
 
-export function createMemoryStore(clock: StoreClock = {}): ReportStore {
+export function createMemoryStore(clock: StoreClock = {}): ReportStore & { eventCounts(): Record<string, number> } {
   const now = clock.now ?? (() => new Date());
   const reports = new Map<string, StoredReport>();
+  const scans: ScanSummary[] = [];
+  const follows: FollowRecord[] = [];
+  const accounts = new Map<string, { login: string; firstSeen: string; lastSeen: string }>();
+  const toAccount = (userId: string, a: { login: string; firstSeen: string; lastSeen: string }): AccountRecord => ({
+    userId,
+    login: a.login,
+    firstSeen: a.firstSeen,
+    lastSeen: a.lastSeen,
+    scans: scans.filter((x) => x.userId === userId).length,
+    follows: follows.filter((f) => f.userId === userId && f.pausedReason === null).length,
+  });
+  const feeds: SignedFeed[] = [];
+  const installations: InstallationRecord[] = [];
+  const emailDays = new Map<string, number>();
   const quota = new Map<string, { windowStart: number; used: number }>();
+  const events = new Map<string, number>();
   let seq = 0;
   return {
     // eslint-disable-next-line @typescript-eslint/require-await
@@ -83,7 +265,7 @@ export function createMemoryStore(clock: StoreClock = {}): ReportStore {
     async save(report) {
       seq += 1;
       const id = `mem-${seq.toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-      reports.set(id, { ...report, id, createdAt: now().toISOString() });
+      reports.set(id, { ...report, id, createdAt: now().toISOString(), isPublic: false });
       return id;
     },
     // eslint-disable-next-line @typescript-eslint/require-await
@@ -101,7 +283,206 @@ export function createMemoryStore(clock: StoreClock = {}): ReportStore {
           n += 1;
         }
       }
+      // History outlives the reports; a line older than SCAN_HISTORY_DAYS goes too.
+      for (let i = scans.length - 1; i >= 0; i--) {
+        const s = scans[i];
+        if (s && t - Date.parse(s.createdAt) > SCAN_HISTORY_DAYS * 86_400_000) scans.splice(i, 1);
+      }
       return n;
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async recordScan(scan) {
+      seq += 1;
+      scans.unshift({ ...scan, id: `scan-${seq.toString(36)}`, createdAt: now().toISOString() });
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async listScans(userId, limit) {
+      return scans.filter((s) => s.userId === userId).slice(0, limit);
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async follow(userId, owner, repo, limit) {
+      const mine = follows.filter((f) => f.userId === userId);
+      const existing = mine.find((f) => f.owner.toLowerCase() === owner.toLowerCase() && f.repo.toLowerCase() === repo.toLowerCase());
+      if (existing) return { ok: true, created: false, follow: { ...existing } };
+      if (mine.length >= limit) return { ok: false, reason: "limit" };
+      seq += 1;
+      const f: FollowRecord = { id: `follow-${seq.toString(36)}`, userId, owner, repo, createdAt: now().toISOString(), lastScanAt: null, lastReportId: null, lastVerdict: null, lastNewUrgent: 0, failures: 0, pausedReason: null, ecosystems: null, queuedAt: null, pendingAlert: null, lastAlertAt: null };
+      follows.push(f);
+      return { ok: true, created: true, follow: { ...f } };
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async unfollow(userId, owner, repo) {
+      const i = follows.findIndex((f) => f.userId === userId && f.owner.toLowerCase() === owner.toLowerCase() && f.repo.toLowerCase() === repo.toLowerCase());
+      if (i >= 0) follows.splice(i, 1);
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async listFollows(userId) {
+      // Copies, like rows from PostgREST: a caller never sees later updates through an old record.
+      return follows.filter((f) => f.userId === userId).map((f) => ({ ...f }));
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async dueFollows(before, limit) {
+      return follows
+        .filter((f) => f.pausedReason === null && (f.queuedAt !== null || f.lastScanAt === null || f.lastScanAt < before))
+        .sort((a, b) => byQueue(a.queuedAt, b.queuedAt) || (a.lastScanAt ?? "").localeCompare(b.lastScanAt ?? ""))
+        .slice(0, limit)
+        .map((f) => ({ ...f }));
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async updateFollow(id, patch) {
+      const f = follows.find((x) => x.id === id);
+      if (f) Object.assign(f, patch);
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async queueFollows(ecosystems, at) {
+      let n = 0;
+      for (const f of follows) {
+        if (f.pausedReason !== null || !f.ecosystems?.some((e) => ecosystems.includes(e))) continue;
+        f.queuedAt = at;
+        n += 1;
+      }
+      return n;
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async getFollow(id) {
+      const f = follows.find((x) => x.id === id);
+      return f ? { ...f } : null;
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async deleteFollow(id) {
+      const i = follows.findIndex((x) => x.id === id);
+      if (i < 0) return false;
+      follows.splice(i, 1);
+      return true;
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async claimEmail(limit) {
+      const day = now().toISOString().slice(0, 10);
+      const sent = emailDays.get(day) ?? 0;
+      if (sent >= limit) return false;
+      emailDays.set(day, sent + 1);
+      return true;
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async saveFeed(feed) {
+      feeds.push({ ...feed });
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async latestFeed() {
+      const latest = [...feeds].sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))[0];
+      return latest ? { ...latest } : null;
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async countEvent(kind) {
+      const key = `${now().toISOString().slice(0, 10)}:${kind}`;
+      events.set(key, (events.get(key) ?? 0) + 1);
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async deleteAccount(userId) {
+      for (const [id, r] of reports) if (r.userId === userId) reports.delete(id);
+      for (let i = scans.length - 1; i >= 0; i--) if (scans[i]?.userId === userId) scans.splice(i, 1);
+      for (let i = follows.length - 1; i >= 0; i--) if (follows[i]?.userId === userId) follows.splice(i, 1);
+      for (let i = installations.length - 1; i >= 0; i--) if (installations[i]?.userId === userId) installations.splice(i, 1);
+      quota.delete(userId);
+      accounts.delete(userId);
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async touchAccount(userId, login) {
+      const at = now().toISOString();
+      const a = accounts.get(userId);
+      if (!a) accounts.set(userId, { login, firstSeen: at, lastSeen: at });
+      else if (Date.parse(at) - Date.parse(a.lastSeen) >= TOUCH_INTERVAL_MS) accounts.set(userId, { ...a, login, lastSeen: at });
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async adminOverview() {
+      const t = now().getTime();
+      const d7 = t - 7 * 86_400_000;
+      const d30 = t - 30 * 86_400_000;
+      const all = [...accounts.values()];
+      return {
+        accounts: all.length,
+        active7: all.filter((a) => Date.parse(a.lastSeen) >= d7).length,
+        active30: all.filter((a) => Date.parse(a.lastSeen) >= d30).length,
+        new7: all.filter((a) => Date.parse(a.firstSeen) >= d7).length,
+        new30: all.filter((a) => Date.parse(a.firstSeen) >= d30).length,
+        scans7: scans.filter((x) => Date.parse(x.createdAt) >= d7).length,
+        scans30: scans.filter((x) => Date.parse(x.createdAt) >= d30).length,
+        follows: follows.filter((f) => f.pausedReason === null).length,
+        sharedReports: [...reports.values()].filter((r) => r.isPublic).length,
+        installations: installations.length,
+      };
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async listAccounts(limit, before) {
+      return [...accounts.entries()]
+        .map(([userId, a]) => toAccount(userId, a))
+        .filter((a) => before === null || a.lastSeen < before)
+        .sort((a, b) => b.lastSeen.localeCompare(a.lastSeen))
+        .slice(0, Math.min(Math.max(limit, 1), 200));
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async getAccount(userId) {
+      const a = accounts.get(userId);
+      return a ? toAccount(userId, a) : null;
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async listSharedReports(userId) {
+      return [...reports.values()]
+        .filter((r) => r.userId === userId && r.isPublic)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .map((r) => ({ id: r.id, owner: r.owner, repo: r.repo, sha: r.sha, createdAt: r.createdAt }));
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async setPublic(id, userId, isPublic) {
+      const r = reports.get(id);
+      if (r?.userId !== userId) return null;
+      const next = { ...r, isPublic };
+      reports.set(id, next);
+      return next;
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async getPublic(id) {
+      const r = reports.get(id);
+      return r?.isPublic ? r : null;
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async listEvents(sinceDay) {
+      const out: EventCount[] = [];
+      for (const [key, count] of events) {
+        const [day, kind] = key.split(":") as [string, EventKind];
+        if (day >= sinceDay) out.push({ day, kind, count });
+      }
+      return out.sort((a, b) => a.day.localeCompare(b.day) || a.kind.localeCompare(b.kind));
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async countScans(since) {
+      const rows = scans.filter((x) => x.createdAt >= since);
+      return { scans: rows.length, accounts: new Set(rows.map((x) => x.userId)).size };
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async countFollows() {
+      return follows.filter((f) => f.pausedReason === null).length;
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async addInstallation(record) {
+      const existing = installations.find((x) => x.userId === record.userId && x.installationId === record.installationId);
+      if (existing) Object.assign(existing, { accountLogin: record.accountLogin, accountType: record.accountType });
+      else installations.push({ ...record, createdAt: now().toISOString() });
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async listInstallations(userId) {
+      return installations.filter((x) => x.userId === userId).map((x) => ({ ...x }));
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async removeInstallation(userId, installationId) {
+      const i = installations.findIndex((x) => x.userId === userId && x.installationId === installationId);
+      if (i < 0) return false;
+      installations.splice(i, 1);
+      return true;
+    },
+    /** "YYYY-MM-DD:kind" -> count, for tests and the local server. */
+    eventCounts() {
+      return Object.fromEntries(events);
     },
   };
 }
@@ -125,6 +506,28 @@ const rowSchema = z.looseObject({
   body: z.unknown(),
   created_at: z.string(),
   expires_at: z.string(),
+  // Absent before migration 20261104000000_public_reports.sql: then nothing is shared.
+  public: z.boolean().optional(),
+});
+
+const eventRowSchema = z.looseObject({ day: z.string(), kind: z.string(), count: z.number() });
+const accountRowSchema = z.looseObject({ user_id: z.string(), login: z.string(), first_seen: z.string(), last_seen: z.string(), scans: z.number(), follows: z.number() });
+const overviewSchema = z.looseObject({ accounts: z.number(), active_7: z.number(), active_30: z.number(), new_7: z.number(), new_30: z.number(), scans_7: z.number(), scans_30: z.number(), follows: z.number(), shared_reports: z.number(), installations: z.number().optional() });
+const installationRowSchema = z.looseObject({ user_id: z.string(), installation_id: z.number().int(), account_login: z.string(), account_type: z.enum(["User", "Organization"]), created_at: z.string() });
+
+const scanRowSchema = z.looseObject({
+  id: z.string(),
+  user_id: z.string(),
+  owner: z.string(),
+  repo: z.string(),
+  sha: z.string(),
+  verdict: z.enum(["pass", "fail", "incomplete"]),
+  p1: z.number().int(),
+  p2: z.number().int(),
+  p3: z.number().int(),
+  p4: z.number().int(),
+  report_id: z.string().nullable(),
+  created_at: z.string(),
 });
 
 const quotaSchema = z.looseObject({ allowed: z.boolean(), used: z.number(), limit: z.number(), reset_at: z.string() });
@@ -142,7 +545,7 @@ export class StoreError extends Error {
 }
 
 function toStored(row: z.infer<typeof rowSchema>): StoredReport {
-  return { id: row.id, userId: row.user_id, owner: row.owner, repo: row.repo, ref: row.ref, sha: row.sha, cachedFrom: row.cached_from, body: row.body, createdAt: row.created_at, expiresAt: row.expires_at };
+  return { id: row.id, userId: row.user_id, owner: row.owner, repo: row.repo, ref: row.ref, sha: row.sha, cachedFrom: row.cached_from, body: row.body, createdAt: row.created_at, expiresAt: row.expires_at, isPublic: row.public === true };
 }
 
 /** Supabase (PostgREST) implementation with the service_role key; the key never leaves the server. */
@@ -214,7 +617,224 @@ export function createSupabaseStore(options: SupabaseStoreOptions): ReportStore 
       const q = new URLSearchParams({ expires_at: `lt.${now().toISOString()}`, select: "id" });
       const out = await call(`/rest/v1/reports?${q.toString()}`, { method: "DELETE", prefer: "return=representation" });
       const parsed = z.array(z.unknown()).safeParse(out);
+      const oldest = new Date(now().getTime() - SCAN_HISTORY_DAYS * 86_400_000).toISOString();
+      await call(`/rest/v1/scans?${new URLSearchParams({ created_at: `lt.${oldest}` }).toString()}`, { method: "DELETE" });
       return parsed.success ? parsed.data.length : 0;
     },
+    async recordScan(scan) {
+      const row = { user_id: scan.userId, owner: scan.owner, repo: scan.repo, sha: scan.sha, verdict: scan.verdict, p1: scan.byPriority.P1, p2: scan.byPriority.P2, p3: scan.byPriority.P3, p4: scan.byPriority.P4, report_id: scan.reportId };
+      await call("/rest/v1/scans", { method: "POST", body: JSON.stringify(row) });
+    },
+    async listScans(userId, limit) {
+      const q = new URLSearchParams({ user_id: `eq.${userId}`, order: "created_at.desc", limit: String(limit) });
+      const out = await call(`/rest/v1/scans?${q.toString()}`, { method: "GET" });
+      const parsed = z.array(scanRowSchema).safeParse(out);
+      if (!parsed.success) throw new StoreError("scans query returned an unexpected shape", 200);
+      return parsed.data.map((r) => ({ id: r.id, userId: r.user_id, owner: r.owner, repo: r.repo, sha: r.sha, verdict: r.verdict, byPriority: { P1: r.p1, P2: r.p2, P3: r.p3, P4: r.p4 }, reportId: r.report_id, createdAt: r.created_at }));
+    },
+    async countEvent(kind) {
+      await call("/rest/v1/rpc/count_event", { method: "POST", body: JSON.stringify({ p_kind: kind }) });
+    },
+    async setPublic(id, userId, isPublic) {
+      if (!ID.test(id)) return null;
+      const q = new URLSearchParams({ id: `eq.${id}`, user_id: `eq.${userId}` });
+      const out = await call(`/rest/v1/reports?${q.toString()}`, { method: "PATCH", body: JSON.stringify({ public: isPublic }), prefer: "return=representation" });
+      const parsed = z.array(rowSchema).safeParse(out);
+      if (!parsed.success) throw new StoreError("reports update returned an unexpected shape", 200);
+      const row = parsed.data[0];
+      return row ? toStored(row) : null;
+    },
+    async getPublic(id) {
+      if (!ID.test(id)) return null;
+      const q = new URLSearchParams({ id: `eq.${id}`, public: "is.true", limit: "1" });
+      const out = await call(`/rest/v1/reports?${q.toString()}`, { method: "GET" });
+      const parsed = z.array(rowSchema).safeParse(out);
+      if (!parsed.success) throw new StoreError("reports query returned an unexpected shape", 200);
+      const row = parsed.data[0];
+      return row ? toStored(row) : null;
+    },
+    async listEvents(sinceDay) {
+      const q = new URLSearchParams({ day: `gte.${sinceDay}`, order: "day.asc,kind.asc", limit: "1000" });
+      const out = await call(`/rest/v1/events?${q.toString()}`, { method: "GET" });
+      const parsed = z.array(eventRowSchema).safeParse(out);
+      if (!parsed.success) throw new StoreError("events query returned an unexpected shape", 200);
+      return parsed.data.filter((r): r is typeof r & { kind: EventKind } => (EVENT_KINDS as readonly string[]).includes(r.kind)).map((r) => ({ day: r.day, kind: r.kind, count: r.count }));
+    },
+    async countScans(since) {
+      const q = new URLSearchParams({ created_at: `gte.${since}`, select: "user_id", limit: "1000" });
+      const out = await call(`/rest/v1/scans?${q.toString()}`, { method: "GET" });
+      const parsed = z.array(z.looseObject({ user_id: z.string() })).safeParse(out);
+      if (!parsed.success) throw new StoreError("scans query returned an unexpected shape", 200);
+      return { scans: parsed.data.length, accounts: new Set(parsed.data.map((r) => r.user_id)).size };
+    },
+    async countFollows() {
+      const q = new URLSearchParams({ paused_reason: "is.null", select: "id", limit: "1000" });
+      const out = await call(`/rest/v1/follows?${q.toString()}`, { method: "GET" });
+      const parsed = z.array(z.unknown()).safeParse(out);
+      return parsed.success ? parsed.data.length : 0;
+    },
+    async follow(userId, owner, repo, limit) {
+      // Atomic in the database: the count and the insert happen in one function, so two tabs cannot pass the limit together.
+      const out = await call("/rest/v1/rpc/follow_repo", { method: "POST", body: JSON.stringify({ p_user: userId, p_owner: owner, p_repo: repo, p_limit: limit }) });
+      const parsed = z.looseObject({ ok: z.boolean(), created: z.boolean().optional(), follow: followRowSchema.nullable().optional() }).safeParse(out);
+      if (!parsed.success) throw new StoreError("follow_repo returned an unexpected shape", 200);
+      if (!parsed.data.ok || !parsed.data.follow) return { ok: false, reason: "limit" };
+      // Before 20261103000000_email.sql the function does not say; no confirmation email is sent then.
+      return { ok: true, created: parsed.data.created === true, follow: toFollow(parsed.data.follow) };
+    },
+    async unfollow(userId, owner, repo) {
+      // The handler stores owner and repo in lower case (GitHub names are case-insensitive), so an exact match is enough.
+      const q = new URLSearchParams({ user_id: `eq.${userId}`, owner: `eq.${owner}`, repo: `eq.${repo}` });
+      await call(`/rest/v1/follows?${q.toString()}`, { method: "DELETE" });
+    },
+    async listFollows(userId) {
+      const q = new URLSearchParams({ user_id: `eq.${userId}`, order: "created_at.asc" });
+      return parseFollows(await call(`/rest/v1/follows?${q.toString()}`, { method: "GET" }));
+    },
+    async dueFollows(before, limit) {
+      const q = new URLSearchParams({ paused_reason: "is.null", or: `(queued_at.not.is.null,last_scan_at.is.null,last_scan_at.lt.${before})`, order: "queued_at.asc.nullslast,last_scan_at.asc.nullsfirst", limit: String(limit) });
+      return parseFollows(await call(`/rest/v1/follows?${q.toString()}`, { method: "GET" }));
+    },
+    async updateFollow(id, patch) {
+      const row: Record<string, unknown> = {};
+      if (patch.lastScanAt !== undefined) row.last_scan_at = patch.lastScanAt;
+      if (patch.lastReportId !== undefined) row.last_report_id = patch.lastReportId;
+      if (patch.lastVerdict !== undefined) row.last_verdict = patch.lastVerdict;
+      if (patch.lastNewUrgent !== undefined) row.last_new_urgent = patch.lastNewUrgent;
+      if (patch.failures !== undefined) row.failures = patch.failures;
+      if (patch.pausedReason !== undefined) row.paused_reason = patch.pausedReason;
+      if (patch.ecosystems !== undefined) row.ecosystems = patch.ecosystems;
+      if (patch.queuedAt !== undefined) row.queued_at = patch.queuedAt;
+      if (patch.pendingAlert !== undefined) row.pending_alert = patch.pendingAlert;
+      if (patch.lastAlertAt !== undefined) row.last_alert_at = patch.lastAlertAt;
+      await call(`/rest/v1/follows?${new URLSearchParams({ id: `eq.${id}` }).toString()}`, { method: "PATCH", body: JSON.stringify(row) });
+    },
+    async queueFollows(ecosystems, at) {
+      // Ecosystem names come from the advisory schema's closed list; anything else would break the array literal and is dropped.
+      const names = ecosystems.filter((e) => /^[A-Za-z.]+$/.test(e));
+      if (names.length === 0) return 0;
+      const q = new URLSearchParams({ paused_reason: "is.null", ecosystems: `ov.{${names.join(",")}}`, select: "id" });
+      const out = await call(`/rest/v1/follows?${q.toString()}`, { method: "PATCH", body: JSON.stringify({ queued_at: at }), prefer: "return=representation" });
+      return Array.isArray(out) ? out.length : 0;
+    },
+    async getFollow(id) {
+      if (!ID.test(id)) return null;
+      return parseFollows(await call(`/rest/v1/follows?${new URLSearchParams({ id: `eq.${id}` }).toString()}`, { method: "GET" }))[0] ?? null;
+    },
+    async deleteFollow(id) {
+      if (!ID.test(id)) return false;
+      const out = await call(`/rest/v1/follows?${new URLSearchParams({ id: `eq.${id}`, select: "id" }).toString()}`, { method: "DELETE", prefer: "return=representation" });
+      return Array.isArray(out) && out.length > 0;
+    },
+    async claimEmail(limit) {
+      return (await call("/rest/v1/rpc/claim_email", { method: "POST", body: JSON.stringify({ p_limit: limit }) })) === true;
+    },
+    async saveFeed(feed) {
+      await call("/rest/v1/feed_sets", { method: "POST", body: JSON.stringify({ published_at: feed.publishedAt, digest: feed.digest, payload: feed.payload, signature: feed.signature }) });
+    },
+    async latestFeed() {
+      const q = new URLSearchParams({ select: "published_at,digest,payload,signature", order: "published_at.desc", limit: "1" });
+      const parsed = z.array(feedRowSchema).safeParse(await call(`/rest/v1/feed_sets?${q.toString()}`, { method: "GET" }));
+      if (!parsed.success) throw new StoreError("feed_sets query returned an unexpected shape", 200);
+      const row = parsed.data[0];
+      return row ? { publishedAt: row.published_at, digest: row.digest, payload: row.payload, signature: row.signature } : null;
+    },
+    async deleteAccount(userId) {
+      if (!ID.test(userId)) throw new StoreError("not an account id", null);
+      // Every table references auth.users with "on delete cascade", so deleting the user removes its rows. They are
+      // deleted first anyway, so a failure part-way leaves less behind, never more; the waitlist only unlinks on cascade.
+      const mine = new URLSearchParams({ user_id: `eq.${userId}` }).toString();
+      for (const table of ["follows", "scans", "reports", "scan_quota", "waitlist", "accounts", "installations"]) await call(`/rest/v1/${table}?${mine}`, { method: "DELETE" });
+      await call(`/auth/v1/admin/users/${userId}`, { method: "DELETE" });
+    },
+    async touchAccount(userId, login) {
+      await call("/rest/v1/rpc/touch_account", { method: "POST", body: JSON.stringify({ p_user: userId, p_login: login }) });
+    },
+    async adminOverview() {
+      const out = await call("/rest/v1/rpc/admin_overview", { method: "POST", body: "{}" });
+      const parsed = overviewSchema.safeParse(out);
+      if (!parsed.success) throw new StoreError("admin_overview returned an unexpected shape", 200);
+      const d = parsed.data;
+      return { accounts: d.accounts, active7: d.active_7, active30: d.active_30, new7: d.new_7, new30: d.new_30, scans7: d.scans_7, scans30: d.scans_30, follows: d.follows, sharedReports: d.shared_reports, installations: d.installations ?? 0 };
+    },
+    async listAccounts(limit, before) {
+      const out = await call("/rest/v1/rpc/admin_accounts", { method: "POST", body: JSON.stringify({ p_limit: Math.min(Math.max(limit, 1), 200), p_before: before }) });
+      const parsed = z.array(accountRowSchema).safeParse(out);
+      if (!parsed.success) throw new StoreError("admin_accounts returned an unexpected shape", 200);
+      return parsed.data.map((r) => ({ userId: r.user_id, login: r.login, firstSeen: r.first_seen, lastSeen: r.last_seen, scans: r.scans, follows: r.follows }));
+    },
+    async getAccount(userId) {
+      if (!ID.test(userId)) return null;
+      const q = new URLSearchParams({ user_id: `eq.${userId}`, limit: "1" });
+      const out = await call(`/rest/v1/accounts?${q.toString()}`, { method: "GET" });
+      const parsed = z.array(z.looseObject({ user_id: z.string(), login: z.string(), first_seen: z.string(), last_seen: z.string() })).safeParse(out);
+      if (!parsed.success) throw new StoreError("accounts query returned an unexpected shape", 200);
+      const row = parsed.data[0];
+      if (!row) return null;
+      const [scansRows, followRows] = await Promise.all([
+        call(`/rest/v1/scans?${new URLSearchParams({ user_id: `eq.${userId}`, select: "id", limit: "1000" }).toString()}`, { method: "GET" }),
+        call(`/rest/v1/follows?${new URLSearchParams({ user_id: `eq.${userId}`, paused_reason: "is.null", select: "id", limit: "1000" }).toString()}`, { method: "GET" }),
+      ]);
+      const count = (x: unknown): number => (Array.isArray(x) ? x.length : 0);
+      return { userId: row.user_id, login: row.login, firstSeen: row.first_seen, lastSeen: row.last_seen, scans: count(scansRows), follows: count(followRows) };
+    },
+    async listSharedReports(userId) {
+      if (!ID.test(userId)) return [];
+      const q = new URLSearchParams({ user_id: `eq.${userId}`, public: "is.true", select: "id,owner,repo,sha,created_at", order: "created_at.desc", limit: "100" });
+      const out = await call(`/rest/v1/reports?${q.toString()}`, { method: "GET" });
+      const parsed = z.array(z.looseObject({ id: z.string(), owner: z.string(), repo: z.string(), sha: z.string(), created_at: z.string() })).safeParse(out);
+      if (!parsed.success) throw new StoreError("reports query returned an unexpected shape", 200);
+      return parsed.data.map((r) => ({ id: r.id, owner: r.owner, repo: r.repo, sha: r.sha, createdAt: r.created_at }));
+    },
+    async addInstallation(record) {
+      const row = { user_id: record.userId, installation_id: record.installationId, account_login: record.accountLogin, account_type: record.accountType };
+      await call("/rest/v1/installations?on_conflict=user_id,installation_id", { method: "POST", body: JSON.stringify(row), prefer: "resolution=merge-duplicates" });
+    },
+    async listInstallations(userId) {
+      if (!ID.test(userId)) return [];
+      const q = new URLSearchParams({ user_id: `eq.${userId}`, order: "created_at.asc", limit: "100" });
+      const out = await call(`/rest/v1/installations?${q.toString()}`, { method: "GET" });
+      const parsed = z.array(installationRowSchema).safeParse(out);
+      if (!parsed.success) throw new StoreError("installations query returned an unexpected shape", 200);
+      return parsed.data.map((r) => ({ userId: r.user_id, installationId: r.installation_id, accountLogin: r.account_login, accountType: r.account_type, createdAt: r.created_at }));
+    },
+    async removeInstallation(userId, installationId) {
+      if (!ID.test(userId)) return false;
+      const q = new URLSearchParams({ user_id: `eq.${userId}`, installation_id: `eq.${String(installationId)}`, select: "installation_id" });
+      const out = await call(`/rest/v1/installations?${q.toString()}`, { method: "DELETE", prefer: "return=representation" });
+      return Array.isArray(out) && out.length > 0;
+    },
   };
+}
+
+const followRowSchema = z.looseObject({
+  id: z.string(),
+  user_id: z.string(),
+  owner: z.string(),
+  repo: z.string(),
+  created_at: z.string(),
+  last_scan_at: z.string().nullable(),
+  last_report_id: z.string().nullable(),
+  last_verdict: z.enum(["pass", "fail", "incomplete"]).nullable(),
+  last_new_urgent: z.number().int(),
+  failures: z.number().int(),
+  paused_reason: z.string().nullable(),
+  // Added by 20261102000000_feed.sql; optional so the follow list keeps working before that migration.
+  ecosystems: z.array(z.string()).nullable().optional(),
+  queued_at: z.string().nullable().optional(),
+  // Added by 20261103000000_email.sql.
+  pending_alert: z.object({ reportId: z.string().max(64), count: z.number().int().min(0), items: z.array(z.object({ priority: z.enum(["P1", "P2"]), id: z.string().max(60), label: z.string().max(120) })).max(10) }).nullable().optional(),
+  last_alert_at: z.string().nullable().optional(),
+});
+
+const feedRowSchema = z.looseObject({ published_at: z.string(), digest: z.string(), payload: z.string(), signature: z.string() });
+
+function toFollow(r: z.infer<typeof followRowSchema>): FollowRecord {
+  return { id: r.id, userId: r.user_id, owner: r.owner, repo: r.repo, createdAt: r.created_at, lastScanAt: r.last_scan_at, lastReportId: r.last_report_id, lastVerdict: r.last_verdict, lastNewUrgent: r.last_new_urgent, failures: r.failures, pausedReason: r.paused_reason, ecosystems: r.ecosystems ?? null, queuedAt: r.queued_at ?? null, pendingAlert: r.pending_alert ?? null, lastAlertAt: r.last_alert_at ?? null };
+}
+
+function parseFollows(out: unknown): FollowRecord[] {
+  const parsed = z.array(followRowSchema).safeParse(out);
+  if (!parsed.success) throw new StoreError("follows query returned an unexpected shape", 200);
+  return parsed.data.map(toFollow);
 }

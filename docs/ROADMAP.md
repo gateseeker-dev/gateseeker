@@ -1,6 +1,6 @@
 # Gateseeker — Roadmap proposal (Sprint 4 → 9, plus Track A)
 
-> Status: **proposal for PO approval**, written 2026-10-28. Continues `docs/PRODUCT.md` §7, which covers Sprints 0 to 4. Nothing here starts without approval; the items that need new services, dependencies or GitHub integration are listed in §5 (rule 8 of `CLAUDE.md`).
+> Status: written 2026-10-28; **decisions 1, 2 and 7 (A1) approved by the PO on 2026-10-28** (§5), the rest still a proposal. Continues `docs/PRODUCT.md` §7, which covers Sprints 0 to 4. Nothing here starts without approval; the items that need new services, dependencies or GitHub integration are listed in §5 (rule 8 of `CLAUDE.md`).
 
 ## 1. Where we are
 
@@ -18,7 +18,7 @@ The product today answers one question well: **"what is wrong with this reposito
 | U4 | **No "what changed since last time".** Each scan is a fresh list; baseline exists in the CLI but not on the web. | Workspace | After fixing three things, the user can't see progress, and a new problem gets lost among the old ones. |
 | U5 | **No way to say "I know, accept this".** Suppression exists only as a code comment (`gateseeker-ignore`). | Report | Accepted risks come back every scan. That noise is how people stop reading reports. |
 | U6 | **The hosted scan may not consult the curated feed** (`src/web/service.ts` relies on `dist/advisories.json` being traced into the Vercel function; not verified on the live page. The failure is not silent: the report then shows origin `none` and a limitation, so the check is in `docs/DEPLOY.md` §7). New approved records reach users only after a redeploy. | `src/web/` | The feed is our differentiator; if the page doesn't use it, the page undersells the product. |
-| U7 | **Lockfile coverage gap:** only `package-lock.json` and `composer.lock`. Projects using pnpm, Yarn or Bun get no dependency analysis. | `src/parser/` | Lovable, Bolt and many Next.js templates use Bun or pnpm. Today they get a partial report, possibly without realizing it. |
+| U7 | **Resolved in Sprint 5 (pnpm and Yarn read; Bun still incomplete).** **Lockfile coverage gap:** only `package-lock.json` and `composer.lock`. Projects using pnpm, Yarn or Bun get no dependency analysis. | `src/parser/` | Lovable, Bolt and many Next.js templates use Bun or pnpm. Today they get a partial report, possibly without realizing it. |
 | U8 | **Dense language for non-specialists.** P1–P4, CVSS, "GHSA", "advisory" are expert vocabulary. | Report, CLI | Our user isn't a security person. They need "Fix today / This week / When you can / FYI" and one plain sentence of impact. |
 
 ## 3. Roadmap
@@ -34,6 +34,8 @@ Each sprint keeps the format of `PRODUCT.md`: delivery, the hypothesis it tests,
 *Metric:* unchanged from Sprint 4.
 
 ### Sprint 5 — From finding to fix
+Detailed scope, with Track A1, in `docs/SPRINT_5.md` (approved 2026-10-29). Note: the web already uses plain priority labels ("Fix now", "Fix before release", …), so U8 there reduces to the impact sentence and the same labels in the CLI and the Action.
+
 - **U2, "Fix with your AI tool":** each finding gets a copyable, deterministic fix prompt written per rule ("In `src/lib/supabase.ts`, the service-role key is exposed through `NEXT_PUBLIC_…`. Move it to a server-only variable and …"). The templates are written by us and tested like rules; no LLM generates them. A short manual fix is also shown for people who don't use AI tools.
 - **U8, plain language:** priorities renamed in the UI to *Fix today / This week / When you can / For your information* (P-codes stay as a secondary label and in JSON/SARIF). One "what could happen" sentence per rule.
 - **U5, accept risk:** "Accept this finding" on the web writes a suggested `gateseeker-ignore` line with a reason, to paste into the code. The decision stays in the repository, reviewable in the PR, with no server state.
@@ -64,6 +66,8 @@ Most findings report a configuration, not a vulnerability. The wording says what
 
 ### Sprint 6 — The product watches for you
 This is the direct answer to "threats appear daily".
+Detailed scope in `docs/SPRINT_6.md` (approved by the PO on 2026-10-31). Checked facts that changed the plan: Vercel Hobby runs cron at most once a day, so rescans are daily (better than the weekly first planned); Resend's free plan (3,000 emails a month, 100 a day) fits the 30-repository target, Postmark's (100 a month) does not. On 2026-10-31 the PO chose Brevo (existing account; free plan about 300 emails a day).
+
 - **U3:** server-side history: "my repositories" and "my reports" in Supabase (RLS, no policies, service_role only, as today). `localStorage` becomes a cache.
 - **U4, compare:** each rescan of a repo shows *new / fixed / still open* against the previous one, reusing the CLI baseline logic.
 - **Continuous monitoring:** the user follows a repo. The service rescans it (a) when a new advisory is approved in the feed, and (b) weekly, because OSV changes. When something **new** appears, they get one email: "A new issue affects `owner/repo`: …, fix today." Only new findings trigger an email, never the full list again.
@@ -71,20 +75,30 @@ This is the direct answer to "threats appear daily".
 
 *Hypothesis:* being told is worth more than remembering to ask. *Metric:* 30 followed repositories; ≥40% of monitoring emails lead to a visit to the report.
 
-### Sprint 7 — Private repositories and the first paid plan
-- GitHub App with read-only, per-repository permission to scan private repos (the only way most real client projects can be scanned).
-- Pull-request check from the App: no YAML needed. Install it, choose repos, done. This is the easy path for people who will never edit a workflow file.
+### Sprint 7 — Admin master and the update notice (approved 2026-11-04)
+Scope in `docs/SPRINT_7.md`: an admin area for the configured logins (accounts, last access with 5-minute precision, activity without findings, the aggregate counters), a User/Admin switch in the sidebar, and a "Gateseeker was updated" notice in open workspaces plus a newer-version line in the CLI and the Action. Private repositories and the paid plan move to Sprint 8.
+
+### Sprint 8 — Private repositories through the site
+Scope in `docs/SPRINT_8.md` (proposed 2026-11-04): a GitHub App with read-only, per-repository permission, authorized once on GitHub's own screen; analysis and daily monitoring of private repositories from the workspace, installations listed and revocable in Settings, no credential stored (a one-hour token per analysis). The pull-request check from the App and the paid plan move to Sprint 9.
+
+*Hypothesis:* people bring their real (private) projects once the site can read them. *Metric:* 20 private repositories analyzed, 5 followed.
+
+### Sprint 9 — Distribution (approved 2026-11-13, replaces the paid plan here)
+Scope in `docs/SPRINT_9.md`: the MCP server and the Claude Code commit hook (track A3), a `/supabase-rls` page, visit-source counters, and the feed collector no longer stalled by an open proposal. The paid plan below waits for its trigger (50 accounts with more than one analysis).
+
+### Later — First paid plan and the App's pull-request check
 - First paid plan (open core, as in `PRODUCT.md` §8): private repos, monitoring, history beyond 30 days. The free tier keeps public scans, the CLI and the Action.
+- Pull-request check from the App: no YAML needed. Install it, choose repos, done. This is the easy path for people who will never edit a workflow file.
 
 *Hypothesis:* someone pays to have a private client project watched. *Metric:* 10 paying accounts.
 
-### Sprint 8 — Agencies and small teams
+### Sprint 10 — Agencies and small teams
 - Workspaces with several members; a "client report" view (PDF already exists) with the agency's name, for freelancers to hand to clients.
 - Gate policy per workspace (which priorities block, which rules are in gate mode), edited on the web and enforced by the Action.
 
 *Hypothesis:* agencies use Gateseeker as a deliverable to their clients. *Metric:* 5 workspaces with ≥3 members or ≥5 client repos.
 
-### Sprint 9 and later (candidates, decided with data)
+### Sprint 11 and later (candidates, decided with data)
 - Optional AI **explanation** of a finding (the third layer of `Finding`, always labeled, never decisive). Paid service, needs approval.
 - Generic secret detection (the gap recorded in `VALIDATION_SPRINT_1.md`), with its own precision budget.
 - More pattern rules for Firebase and Next.js server actions, prioritized by what the monitoring data shows is common.
@@ -95,6 +109,8 @@ This is the direct answer to "threats appear daily".
 Everything above keeps the non-negotiables: deterministic priority, `incomplete` never shown as `pass`, no "secure" language, nothing from the analyzed project executed, secrets redacted everywhere, including monitoring emails, and every pattern rule shipped with fixtures and measured precision.
 
 ## 5. Decisions needed from the PO
+
+Approved by the PO on 2026-10-28: **1** (keep login and measure), **2** (Sprint 5 before Sprint 6), **7** (Track A1 now; A2 waits). On 2026-10-29: **5** (pnpm and Yarn are not a new ecosystem; Sprint 5 reads them) and the Sprint 5 scope. On 2026-10-31: **3** (email provider: Brevo) and the Sprint 6 scope. Open: 4, 6, and the A2 source.
 
 1. **Anonymous scans on the page (U1):** reopen, with a stricter limit, or keep login? Recommendation (revised 2026-10-28): **launch with login and measure.** Our audience already has a GitHub account, so sign-in is one click; Home shows a real example report so the value is visible before login; and two aggregate counters (visits to `/login`, completed sign-ins) tell us the abandonment rate. If more than 40% of visitors abandon at login over the first 2 weeks or 100 visits, open anonymous scans: 3 per IP per day, a global daily cap, report shown but not saved, "sign in to save and follow this repo" as the next step.
 2. **Order:** Sprint 5 (fix) before Sprint 6 (monitoring)? Recommendation: yes. Monitoring sends people to reports, so the reports must first tell them how to fix.

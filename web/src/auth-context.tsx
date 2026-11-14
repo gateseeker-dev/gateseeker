@@ -1,11 +1,16 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { SESSION_INVALID_EVENT } from "./api";
 import { loadAuth, type AuthClient, type AuthMode, type Session } from "./auth";
+import { navigate } from "./router";
 
 /**
  * React side of auth.ts: one client for the whole page, the current session,
  * and the two actions. `status` is "loading" until /api/config answered and
  * the stored session (if any) was read, so guards never flash the wrong page.
+ * When the service answers 401 to a call made with the session (expired, or
+ * ended from another browser), the local session is dropped and the login
+ * page opens with the way back to the page that was open.
  */
 
 export interface AuthState {
@@ -17,6 +22,12 @@ export interface AuthState {
 }
 
 const AuthContext = createContext<AuthState>({ status: "loading", mode: "none", session: null, signIn: () => Promise.resolve(), signOut: () => Promise.resolve() });
+
+function sameSession(a: Session | null, b: Session | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.accessToken === b.accessToken && a.user.id === b.user.id && a.user.login === b.user.login && a.user.avatarUrl === b.user.avatarUrl;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [client, setClient] = useState<AuthClient | null>(null);
@@ -33,13 +44,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setClient(c);
       setSession(s);
       setReady(true);
-      unsubscribe = c.onChange((next) => { setSession(next); });
+      // The provider announces the session again whenever the tab regains focus (it re-checks it), with a fresh object
+      // each time. Only a real change replaces the state, or every effect keyed on the session would refetch and show
+      // skeletons at each tab switch.
+      unsubscribe = c.onChange((next) => { setSession((prev) => (sameSession(prev, next) ? prev : next)); });
     });
     return () => {
       cancelled = true;
       unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!client) return;
+    let busy = false;
+    const onInvalid = () => {
+      if (busy) return;
+      busy = true;
+      const back = window.location.pathname;
+      void client.signOut().finally(() => {
+        setSession(null);
+        navigate(`/login?reason=expired&next=${encodeURIComponent(back)}`);
+      });
+    };
+    window.addEventListener(SESSION_INVALID_EVENT, onInvalid);
+    return () => { window.removeEventListener(SESSION_INVALID_EVENT, onInvalid); };
+  }, [client]);
 
   const value = useMemo<AuthState>(
     () => ({
