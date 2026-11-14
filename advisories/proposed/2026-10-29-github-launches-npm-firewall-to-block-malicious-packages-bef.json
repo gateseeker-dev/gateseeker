@@ -35,5 +35,14 @@
   "upstream": {
     "osv": null,
     "ghsa": null
+  },
+  "draft": {
+    "review": {
+      "proposed_by": "collector",
+      "proposed_at": "2026-10-29T13:08:20.235Z",
+      "reviewed_by": null,
+      "reviewed_at": null,
+      "notes": "Recomendação da engenharia: REJEITAR. Motivo sugerido: anúncio de um produto do GitHub (npm firewall), não um incidente; não há pacote nem versão afetada. Confira só que a fonte fala de um lançamento."
+    }
   }
 }
