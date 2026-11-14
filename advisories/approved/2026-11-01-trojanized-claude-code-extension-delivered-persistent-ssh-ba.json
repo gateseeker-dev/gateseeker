@@ -1,0 +1,62 @@
+{
+  "id": "GSK-ADV-2026-0014",
+  "status": "approved",
+  "type": "malicious-version",
+  "severity": "CRITICAL",
+  "ecosystem": "other",
+  "packages": [
+    {
+      "name": "Anthropic.claude-code",
+      "affected": {
+        "versions": [
+          "2.1.312",
+          "2.1.313"
+        ],
+        "fixed_in": "2.1.314"
+      }
+    }
+  ],
+  "window": {
+    "start": "2026-10-29T09:27:00.000Z",
+    "end": "2026-10-29T20:35:00.000Z"
+  },
+  "indicators": [
+    "Only on Cursor's extension marketplace; the Open VSX and Microsoft Marketplace builds were not affected",
+    "Planted an SSH key labelled svc-telemetry in the user's authorized keys",
+    "Opened a reverse SSH tunnel to 134.209.82.225"
+  ],
+  "summary": "Builds 2.1.312 and 2.1.313 of the Claude Code extension on Cursor's extension marketplace were tampered with to install a persistent SSH backdoor on developer machines. The genuine extension id was used; Anthropic's own systems were not compromised.",
+  "remediation": "In Cursor, check the installed Claude Code extension version. If 2.1.312 or 2.1.313 was installed on 29 October 2026, update to 2.1.314 or later, remove unknown keys from ~/.ssh/authorized_keys (look for svc-telemetry), and rotate the SSH keys and credentials stored on that machine.",
+  "sources": [
+    {
+      "url": "https://cursor.com/blog/claude-code-extension-security-notice",
+      "publisher": "Cursor",
+      "title": "Security notice: malicious version of Anthropic.claude-code (2.1.312 and 2.1.313) in the Cursor VS Code Extension Marketplace",
+      "published_at": "2026-10-29",
+      "primary": true
+    },
+    {
+      "url": "https://www.stepsecurity.io/blog/claude-code-extension-trojanized",
+      "publisher": "StepSecurity",
+      "title": "Trojanized Claude Code Extension Delivered Persistent SSH Backdoor to Developer Machines",
+      "published_at": "2026-11-01"
+    },
+    {
+      "url": "https://www.ox.security/blog/malicious-claude-code-extension-cursor-ssh-backdoor/",
+      "publisher": "OX Security",
+      "title": "Compromised Claude Code extensions (versions 2.1.312 and 2.1.313) in Cursor try to install a backdoor",
+      "published_at": "2026-10-30"
+    }
+  ],
+  "review": {
+    "proposed_by": "collector",
+    "proposed_at": "2026-11-14T02:52:41.133Z",
+    "reviewed_by": "fernandocapone-stack (on engineering's researched recommendation)",
+    "reviewed_at": "2026-11-14T03:10:58.084Z",
+    "notes": "Approved by the PO on 2026-11-14 on engineering's recommendation. Editor extension: informational record, never matches a lockfile."
+  },
+  "upstream": {
+    "osv": null,
+    "ghsa": null
+  }
+}

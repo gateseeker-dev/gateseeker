@@ -1,6 +1,6 @@
 {
   "id": "GSK-ADV-2026-0012",
-  "status": "proposed",
+  "status": "rejected",
   "type": "other",
   "severity": "HIGH",
   "ecosystem": "npm",
@@ -28,21 +28,12 @@
   "review": {
     "proposed_by": "collector",
     "proposed_at": "2026-10-29T13:08:20.235Z",
-    "reviewed_by": null,
-    "reviewed_at": null,
-    "notes": null
+    "reviewed_by": "fernandocapone-stack (on engineering's researched recommendation)",
+    "reviewed_at": "2026-11-14T03:10:58.084Z",
+    "notes": "Rejected 2026-11-14: Product announcement (GitHub npm firewall), not an incident; no package or version affected."
   },
   "upstream": {
     "osv": null,
     "ghsa": null
-  },
-  "draft": {
-    "review": {
-      "proposed_by": "collector",
-      "proposed_at": "2026-10-29T13:08:20.235Z",
-      "reviewed_by": null,
-      "reviewed_at": null,
-      "notes": "Recomendação da engenharia: REJEITAR. Motivo sugerido: anúncio de um produto do GitHub (npm firewall), não um incidente; não há pacote nem versão afetada. Confira só que a fonte fala de um lançamento."
-    }
   }
 }

@@ -1,6 +1,6 @@
 {
   "id": "GSK-ADV-2026-0015",
-  "status": "proposed",
+  "status": "rejected",
   "type": "other",
   "severity": "HIGH",
   "ecosystem": "other",
@@ -28,21 +28,12 @@
   "review": {
     "proposed_by": "collector",
     "proposed_at": "2026-11-14T02:52:41.133Z",
-    "reviewed_by": null,
-    "reviewed_at": null,
-    "notes": null
+    "reviewed_by": "fernandocapone-stack (on engineering's researched recommendation)",
+    "reviewed_at": "2026-11-14T03:10:58.084Z",
+    "notes": "Rejected 2026-11-14: Fake AI domains and browser malware; no npm or Composer package a lockfile can hold."
   },
   "upstream": {
     "osv": null,
     "ghsa": null
-  },
-  "draft": {
-    "review": {
-      "proposed_by": "collector",
-      "proposed_at": "2026-11-14T02:52:41.133Z",
-      "reviewed_by": null,
-      "reviewed_at": null,
-      "notes": "Recomendação da engenharia: REJEITAR. Motivo sugerido: golpe com domínios falsos de IA e extensões de navegador; nenhum pacote npm ou Composer, nada que um lockfile possa conter. Confira só que a fonte não cita nome de pacote npm ou Composer."
-    }
   }
 }

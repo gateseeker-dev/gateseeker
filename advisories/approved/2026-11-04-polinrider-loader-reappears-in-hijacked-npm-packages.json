@@ -1,0 +1,58 @@
+{
+  "id": "GSK-ADV-2026-0016",
+  "status": "approved",
+  "type": "malicious-version",
+  "severity": "CRITICAL",
+  "ecosystem": "npm",
+  "packages": [
+    {
+      "name": "server-hemera-mongo",
+      "affected": {
+        "versions": [
+          "0.0.15"
+        ]
+      }
+    }
+  ],
+  "window": {
+    "start": "2026-11-03T22:12:11.630Z",
+    "end": "2026-11-04T19:45:10.288Z"
+  },
+  "indicators": [
+    "server-hemera-mongo 0.0.15 published 2026-11-03 22:12 UTC, no longer served by the npm registry since 2026-11-04",
+    "Part of the hijack of 12 releases in 10 packages (@adminide-stack and others); OSV covers the other 11 (MAL-2026-18639 to MAL-2026-18647, MAL-2026-11986)"
+  ],
+  "summary": "A hijacked release of server-hemera-mongo (0.0.15) carried a loader that, when the package is loaded, downloads and runs a remote-access tool. It is the only release of this campaign that OSV does not list yet.",
+  "remediation": "Make sure no lockfile resolves server-hemera-mongo 0.0.15 (the registry no longer serves it; 0.0.11 is the current version). If 0.0.15 was installed and loaded, treat that machine as compromised: rotate every credential it could read (npm, Git, cloud, .env files) and check npm and editor startup files for unknown entries.",
+  "sources": [
+    {
+      "url": "https://www.sonatype.com/blog/polinrider-loader-reappears-in-hijacked-npm-packages",
+      "publisher": "Sonatype",
+      "title": "PolinRider Loader Reappears in Hijacked npm Packages",
+      "published_at": "2026-11-04"
+    },
+    {
+      "url": "https://blog.greenflagged.dev/posts/2026-11-03-adminide-stack-eth-dead-drop/",
+      "publisher": "Greenflagged",
+      "title": "@adminide-stack npm compromise: an Ethereum dead drop that leads to a Node RAT",
+      "published_at": "2026-11-03"
+    },
+    {
+      "url": "https://registry.npmjs.org/server-hemera-mongo",
+      "publisher": "npm registry",
+      "title": "server-hemera-mongo registry metadata (publish time of 0.0.15, version no longer listed)",
+      "published_at": "2026-11-04"
+    }
+  ],
+  "review": {
+    "proposed_by": "collector",
+    "proposed_at": "2026-11-14T02:52:41.133Z",
+    "reviewed_by": "fernandocapone-stack (on engineering's researched recommendation)",
+    "reviewed_at": "2026-11-14T03:10:58.084Z",
+    "notes": "Approved by the PO on 2026-11-14 on engineering's recommendation. Only 0.0.15: the other 11 releases of the campaign are in OSV (MAL-2026-18639..18647, MAL-2026-11986)."
+  },
+  "upstream": {
+    "osv": null,
+    "ghsa": null
+  }
+}
