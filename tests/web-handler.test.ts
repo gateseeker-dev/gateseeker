@@ -637,12 +637,13 @@ describe("daily monitor", () => {
 describe("published advisory feed", () => {
   const KEY = "k".repeat(32);
   const T0 = Date.parse("2026-11-02T12:00:00Z");
-  // The real approved records (never invented ones): the first set leaves the Packagist record out, the second adds it.
+  // The real approved records (never invented ones). The first set holds only records no follow below uses (neither
+  // npm nor Packagist), so whatever else gets approved later cannot change what the tests expect; the second adds Packagist.
   const approved = readdirSync(join(process.cwd(), "advisories", "approved"))
     .filter((n) => n.endsWith(".json"))
     .map((n) => JSON.parse(readFileSync(join(process.cwd(), "advisories", "approved", n), "utf8")) as { id: string; ecosystem: string });
-  const withoutPackagist = JSON.stringify(approved.filter((a) => a.ecosystem !== "Packagist"));
-  const everything = JSON.stringify(approved);
+  const withoutPackagist = JSON.stringify(approved.filter((a) => a.ecosystem !== "Packagist" && a.ecosystem !== "npm"));
+  const everything = JSON.stringify(approved.filter((a) => a.ecosystem !== "npm"));
 
   function signed(payload: string, at: number, key = KEY) {
     const publishedAt = new Date(at).toISOString();
@@ -652,7 +653,7 @@ describe("published advisory feed", () => {
 
   it("has a Packagist record and another one to work with", () => {
     expect(approved.some((a) => a.ecosystem === "Packagist")).toBe(true);
-    expect(approved.some((a) => a.ecosystem !== "Packagist")).toBe(true);
+    expect(approved.some((a) => a.ecosystem !== "Packagist" && a.ecosystem !== "npm")).toBe(true);
   });
 
   it("refuses a set without the key, with a wrong signature, stale, replayed, with invalid records or a wrong digest", async () => {
