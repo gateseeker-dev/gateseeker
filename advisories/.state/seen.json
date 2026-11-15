@@ -91,7 +91,8 @@
     "https://www.stepsecurity.io/blog/wfx-phantom-the-github-actions-secret-stealer": "2026-11-14T02:52:41.133Z",
     "https://www.stepsecurity.io/blog/claude-code-extension-trojanized": "2026-11-14T02:52:41.133Z",
     "https://thehackernews.com/2026/11/186-fake-ai-domains-redirect-users-to.html": "2026-11-14T02:52:41.133Z",
-    "https://www.sonatype.com/blog/polinrider-loader-reappears-in-hijacked-npm-packages": "2026-11-14T02:52:41.133Z"
+    "https://www.sonatype.com/blog/polinrider-loader-reappears-in-hijacked-npm-packages": "2026-11-14T02:52:41.133Z",
+    "https://thehackernews.com/2026/11/stolen-fireworks-ai-key-led-to-cursor.html": "2026-11-15T18:54:39.990Z"
   },
   "titles": {
     "ea48cb3956a9b65a": "https://www.stepsecurity.io/blog/litellm-1-107-0-compromised-pypi-backdoored-wheels-credential-stealer",
@@ -185,6 +186,7 @@
     "3c877e0a6c5e30ea": "https://www.stepsecurity.io/blog/wfx-phantom-the-github-actions-secret-stealer",
     "97aa2513c211cea8": "https://www.stepsecurity.io/blog/claude-code-extension-trojanized",
     "35bbd4730c9a46cd": "https://thehackernews.com/2026/11/186-fake-ai-domains-redirect-users-to.html",
-    "5e86205cf6aeb6c1": "https://www.sonatype.com/blog/polinrider-loader-reappears-in-hijacked-npm-packages"
+    "5e86205cf6aeb6c1": "https://www.sonatype.com/blog/polinrider-loader-reappears-in-hijacked-npm-packages",
+    "0331c5a94bb9fb85": "https://thehackernews.com/2026/11/stolen-fireworks-ai-key-led-to-cursor.html"
   }
 }
