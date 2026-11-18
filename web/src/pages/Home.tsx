@@ -2,6 +2,7 @@ import { Card, CardContent, buttonVariants, cn } from "@gateseeker/ui-kit";
 import { ArrowRight, ListOrdered, ScanSearch, Siren } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { GitHubCta } from "../components/GitHubCta";
 import { LiveExample } from "../components/LiveExample";
 import { Link } from "../router";
 
@@ -26,6 +27,7 @@ export function Home() {
             <Link href="/login" className={cn(buttonVariants({ size: "lg", variant: "outline" }), "h-11 w-full px-6 text-base sm:w-auto")}>
               Log in
             </Link>
+            <GitHubCta className="w-full sm:w-auto" />
           </div>
           <p className="mt-3 text-xs text-muted-foreground">Free demo workspace, no card required. Open source, MIT.</p>
         </div>

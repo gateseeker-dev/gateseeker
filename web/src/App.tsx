@@ -3,6 +3,7 @@ import { LogOut, Menu, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { AuthProvider, useAuth } from "./auth-context";
+import { GitHubCta } from "./components/GitHubCta";
 import { PageSkeleton, ReportSkeleton } from "./components/Skeletons";
 import { countVisit } from "./funnel";
 
@@ -195,6 +196,7 @@ function Shell() {
                   Log in
                 </Link>
               )}
+              <GitHubCta compact className="ml-2" />
               <Link href="/get-started" className={cn(buttonVariants({ size: "sm" }), "ml-2")}>
                 Get started
               </Link>
@@ -221,6 +223,9 @@ function Shell() {
                   </button>
                 </li>
               )}
+              <li className="pt-2">
+                <GitHubCta compact className="w-full" />
+              </li>
               <li className="pt-2">
                 <Link href="/get-started" className={cn(buttonVariants({ size: "default" }), "w-full")}>
                   Get started
