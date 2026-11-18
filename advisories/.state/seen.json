@@ -91,7 +91,11 @@
     "https://www.stepsecurity.io/blog/wfx-phantom-the-github-actions-secret-stealer": "2026-11-14T02:52:41.133Z",
     "https://www.stepsecurity.io/blog/claude-code-extension-trojanized": "2026-11-14T02:52:41.133Z",
     "https://thehackernews.com/2026/11/186-fake-ai-domains-redirect-users-to.html": "2026-11-14T02:52:41.133Z",
-    "https://www.sonatype.com/blog/polinrider-loader-reappears-in-hijacked-npm-packages": "2026-11-14T02:52:41.133Z"
+    "https://www.sonatype.com/blog/polinrider-loader-reappears-in-hijacked-npm-packages": "2026-11-14T02:52:41.133Z",
+    "https://thehackernews.com/2026/11/stolen-fireworks-ai-key-led-to-cursor.html": "2026-11-15T18:54:39.990Z",
+    "https://www.stepsecurity.io/blog/wppconnect-compromised-malicious-releases-steal-secrets-and-whatsapp-sessions": "2026-11-17T07:58:58.446Z",
+    "https://www.stepsecurity.io/blog/microsoft-agent-framework-pypi-package-compromised": "2026-11-18T07:34:57.326Z",
+    "https://www.aikido.dev/blog/two-malicious-agent-framework-releases-hit-pypi-in-33-minutes": "2026-11-18T07:34:57.326Z"
   },
   "titles": {
     "ea48cb3956a9b65a": "https://www.stepsecurity.io/blog/litellm-1-107-0-compromised-pypi-backdoored-wheels-credential-stealer",
@@ -185,6 +189,10 @@
     "3c877e0a6c5e30ea": "https://www.stepsecurity.io/blog/wfx-phantom-the-github-actions-secret-stealer",
     "97aa2513c211cea8": "https://www.stepsecurity.io/blog/claude-code-extension-trojanized",
     "35bbd4730c9a46cd": "https://thehackernews.com/2026/11/186-fake-ai-domains-redirect-users-to.html",
-    "5e86205cf6aeb6c1": "https://www.sonatype.com/blog/polinrider-loader-reappears-in-hijacked-npm-packages"
+    "5e86205cf6aeb6c1": "https://www.sonatype.com/blog/polinrider-loader-reappears-in-hijacked-npm-packages",
+    "0331c5a94bb9fb85": "https://thehackernews.com/2026/11/stolen-fireworks-ai-key-led-to-cursor.html",
+    "8b9ef9103dfa71e0": "https://www.stepsecurity.io/blog/wppconnect-compromised-malicious-releases-steal-secrets-and-whatsapp-sessions",
+    "50cd490ebde473eb": "https://www.stepsecurity.io/blog/microsoft-agent-framework-pypi-package-compromised",
+    "2265ee1e02be8cfa": "https://www.aikido.dev/blog/two-malicious-agent-framework-releases-hit-pypi-in-33-minutes"
   }
 }
