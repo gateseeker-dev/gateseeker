@@ -1,0 +1,39 @@
+{
+  "id": "GSK-ADV-2026-0019",
+  "status": "proposed",
+  "type": "other",
+  "severity": "HIGH",
+  "ecosystem": "PyPI",
+  "packages": [
+    {
+      "name": "UNKNOWN/fill-in",
+      "affected": {}
+    }
+  ],
+  "window": {
+    "start": "2026-11-18T03:06:46.000Z",
+    "end": null
+  },
+  "indicators": [],
+  "summary": "TODO: one line written by the reviewer after reading the source.",
+  "remediation": "TODO: concrete action written by the reviewer.",
+  "sources": [
+    {
+      "url": "https://www.stepsecurity.io/blog/microsoft-agent-framework-pypi-package-compromised",
+      "publisher": "StepSecurity",
+      "title": "Microsoft agent-framework PyPI Package Compromised",
+      "published_at": "2026-11-18"
+    }
+  ],
+  "review": {
+    "proposed_by": "collector",
+    "proposed_at": "2026-11-18T07:34:57.326Z",
+    "reviewed_by": null,
+    "reviewed_at": null,
+    "notes": null
+  },
+  "upstream": {
+    "osv": null,
+    "ghsa": null
+  }
+}
