@@ -2,7 +2,9 @@ import { Card, CardContent, buttonVariants, cn } from "@gateseeker/ui-kit";
 import { ArrowRight, ListOrdered, ScanSearch, Siren } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { GitHubCta } from "../components/GitHubCta";
 import { LiveExample } from "../components/LiveExample";
+import { RadarBackdrop } from "../components/RadarBackdrop";
 import { Link } from "../router";
 
 /**
@@ -14,6 +16,8 @@ export function Home() {
   return (
     <>
       <section className="relative mb-14 pt-4 sm:mb-20 sm:pt-10">
+        {/* Stays inside the page gutters (no horizontal scroll) and reaches up to the bottom edge of the header. */}
+        <RadarBackdrop className="-inset-x-4 -top-10 -bottom-10 sm:-inset-x-6 sm:-top-14" />
         <div className="relative mx-auto max-w-3xl text-center">
           <h1 className="text-4xl font-semibold leading-[1.08] tracking-tight sm:text-5xl lg:text-[3.5rem]">Your app was built fast. Find out what shipped with it.</h1>
           <p className="mx-auto mt-5 max-w-2xl text-base text-muted-foreground sm:text-lg">
@@ -26,6 +30,7 @@ export function Home() {
             <Link href="/login" className={cn(buttonVariants({ size: "lg", variant: "outline" }), "h-11 w-full px-6 text-base sm:w-auto")}>
               Log in
             </Link>
+            <GitHubCta className="w-full sm:w-auto" />
           </div>
           <p className="mt-3 text-xs text-muted-foreground">Free demo workspace, no card required. Open source, MIT.</p>
         </div>

@@ -2,3 +2,85 @@
 @import "@gateseeker/ui-kit/theme.css";
 @source "../../ui-kit/src";
 
+/*
+ * Radar backdrop of the Home hero (components/RadarBackdrop.tsx). Site-only:
+ * the triage interface does not use it. Colour comes from --brand; the dish is
+ * a square centred in its container and faded out towards the edge by a mask,
+ * dimmer in the middle so the headline stays readable.
+ */
+.radar {
+  --radar-line: color-mix(in oklab, var(--brand) 32%, transparent);
+  --radar-beam: color-mix(in oklab, var(--brand) 30%, transparent);
+  /* The container clips the dish; fade its top and bottom so the cut never shows as a line. */
+  mask-image: linear-gradient(to bottom, transparent 0%, black 22%, black 72%, transparent 100%);
+}
+.radar-dish {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(60rem, 150%);
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  border-radius: 50%;
+  mask-image: radial-gradient(circle closest-side, rgb(0 0 0 / 35%) 0%, rgb(0 0 0 / 85%) 45%, transparent 100%);
+}
+.radar-rings {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background:
+    linear-gradient(var(--radar-line), var(--radar-line)) center / 1px 100% no-repeat,
+    linear-gradient(var(--radar-line), var(--radar-line)) center / 100% 1px no-repeat,
+    repeating-radial-gradient(circle closest-side, transparent 0 calc(16.666% - 1px), var(--radar-line) calc(16.666% - 1px) 16.666%);
+}
+.radar-sweep {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0deg 285deg, var(--radar-beam) 360deg);
+  animation: radar-sweep linear infinite;
+}
+.radar-blip {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: var(--brand);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--brand) 25%, transparent);
+  opacity: 0;
+  animation: radar-blip linear infinite;
+}
+@keyframes radar-sweep {
+  to {
+    rotate: 360deg;
+  }
+}
+@keyframes radar-blip {
+  0% {
+    opacity: 0.95;
+    scale: 1.25;
+  }
+  12% {
+    scale: 1;
+  }
+  65%,
+  100% {
+    opacity: 0;
+    scale: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .radar-sweep {
+    animation: none;
+  }
+  .radar-blip {
+    animation: none;
+    opacity: 0.5;
+  }
+}
+@media print {
+  .radar {
+    display: none;
+  }
+}
