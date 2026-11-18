@@ -30,16 +30,15 @@
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background:
-    linear-gradient(var(--radar-line), var(--radar-line)) center / 1px 100% no-repeat,
-    repeating-radial-gradient(circle closest-side, transparent 0 calc(12.5% - 1px), var(--radar-line) calc(12.5% - 1px) 12.5%);
+  /* Four rings and nothing else: no centre line. */
+  background: repeating-radial-gradient(circle closest-side, transparent 0 calc(25% - 1px), var(--radar-line) calc(25% - 1px) 25%);
 }
-/* Two opposite beams, bright on the leading edge, so one is always in the visible half. */
+/* Two opposite narrow beams (22 degrees each), bright on the leading edge, so one is always in the visible half. */
 .radar-sweep {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: conic-gradient(from 0deg, transparent 0deg 125deg, var(--radar-beam) 180deg, transparent 180deg 305deg, var(--radar-beam) 360deg);
+  background: conic-gradient(from 0deg, transparent 0deg 158deg, var(--radar-beam) 180deg, transparent 180deg 338deg, var(--radar-beam) 360deg);
   animation: radar-sweep linear infinite;
 }
 .radar-blip {

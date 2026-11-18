@@ -3,7 +3,7 @@ import { cn } from "@gateseeker/ui-kit";
 /*
  * Decorative radar behind the Home hero. Its centre sits on the top edge of
  * the container (the bottom edge of the header), so only the lower half shows:
- * rings fan out downwards from the header. Two opposite beams turn clockwise,
+ * four rings fan out downwards from the header. Two opposite beams turn clockwise,
  * so one is always crossing the visible half. Pure CSS (web/src/index.css),
  * brand colour, no script; beams and blips stand still for visitors who ask
  * for reduced motion.
