@@ -4,25 +4,27 @@
 
 /*
  * Radar backdrop of the Home hero (components/RadarBackdrop.tsx). Site-only:
- * the triage interface does not use it. Colour comes from --brand; the dish is
- * a square centred in its container and faded out towards the edge by a mask,
- * dimmer in the middle so the headline stays readable.
+ * the triage interface does not use it. Colour comes from --brand. The dish is
+ * a circle whose centre sits on the container's top edge, which is the bottom
+ * edge of the header: the container clips the upper half, so the rings fan out
+ * downwards. A radial mask fades them out with distance from the header.
  */
 .radar {
-  --radar-line: color-mix(in oklab, var(--brand) 32%, transparent);
-  --radar-beam: color-mix(in oklab, var(--brand) 30%, transparent);
-  /* The container clips the dish; fade its top and bottom so the cut never shows as a line. */
-  mask-image: linear-gradient(to bottom, transparent 0%, black 22%, black 72%, transparent 100%);
+  --radar-line: color-mix(in oklab, var(--brand) 30%, transparent);
+  --radar-beam: color-mix(in oklab, var(--brand) 26%, transparent);
+  /* The container clips the dish at the page gutters and below the hero; fade those three edges so the cut never shows. The top edge stays sharp: it is the header. */
+  mask-image: linear-gradient(to right, transparent 0%, black 14%, black 86%, transparent 100%), linear-gradient(to bottom, black 0%, black 70%, transparent 100%);
+  mask-composite: intersect;
 }
 .radar-dish {
   position: absolute;
   left: 50%;
-  top: 50%;
-  width: min(60rem, 150%);
+  top: 0;
+  width: min(76rem, 230%);
   aspect-ratio: 1;
   translate: -50% -50%;
   border-radius: 50%;
-  mask-image: radial-gradient(circle closest-side, rgb(0 0 0 / 35%) 0%, rgb(0 0 0 / 85%) 45%, transparent 100%);
+  mask-image: radial-gradient(circle closest-side, black 0%, rgb(0 0 0 / 70%) 40%, rgb(0 0 0 / 30%) 75%, transparent 100%);
 }
 .radar-rings {
   position: absolute;
@@ -30,14 +32,14 @@
   border-radius: 50%;
   background:
     linear-gradient(var(--radar-line), var(--radar-line)) center / 1px 100% no-repeat,
-    linear-gradient(var(--radar-line), var(--radar-line)) center / 100% 1px no-repeat,
-    repeating-radial-gradient(circle closest-side, transparent 0 calc(16.666% - 1px), var(--radar-line) calc(16.666% - 1px) 16.666%);
+    repeating-radial-gradient(circle closest-side, transparent 0 calc(12.5% - 1px), var(--radar-line) calc(12.5% - 1px) 12.5%);
 }
+/* Two opposite beams, bright on the leading edge, so one is always in the visible half. */
 .radar-sweep {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: conic-gradient(from 0deg, transparent 0deg 285deg, var(--radar-beam) 360deg);
+  background: conic-gradient(from 0deg, transparent 0deg 125deg, var(--radar-beam) 180deg, transparent 180deg 305deg, var(--radar-beam) 360deg);
   animation: radar-sweep linear infinite;
 }
 .radar-blip {
@@ -73,6 +75,7 @@
 @media (prefers-reduced-motion: reduce) {
   .radar-sweep {
     animation: none;
+    rotate: 20deg;
   }
   .radar-blip {
     animation: none;

@@ -1,22 +1,27 @@
 import { cn } from "@gateseeker/ui-kit";
 
 /*
- * Decorative radar behind the Home hero: concentric rings, a crosshair, a
- * slow sweep and a few blips that light up as the sweep passes. Pure CSS
- * (web/src/index.css), brand colour, no script; the sweep and the blips stand
- * still for visitors who ask for reduced motion. Blips are placed by angle
- * (clockwise from the top) and distance from the centre, and their delay is
- * the moment the sweep reaches that angle.
+ * Decorative radar behind the Home hero. Its centre sits on the top edge of
+ * the container (the bottom edge of the header), so only the lower half shows:
+ * rings fan out downwards from the header. Two opposite beams turn clockwise,
+ * so one is always crossing the visible half. Pure CSS (web/src/index.css),
+ * brand colour, no script; beams and blips stand still for visitors who ask
+ * for reduced motion.
+ *
+ * Blips are placed by angle (clockwise from the top, so 90..270 is the visible
+ * half) and distance from the centre. A beam reaches a given angle every half
+ * turn; each blip's delay is the moment that happens.
  */
 
-const SWEEP_SECONDS = 9;
+const TURN_SECONDS = 14;
+const BEAM_SECONDS = TURN_SECONDS / 2;
 
 const BLIPS: { angle: number; distance: number }[] = [
-  { angle: 38, distance: 0.62 },
-  { angle: 112, distance: 0.84 },
-  { angle: 205, distance: 0.7 },
-  { angle: 251, distance: 0.46 },
-  { angle: 318, distance: 0.9 },
+  { angle: 108, distance: 0.78 },
+  { angle: 139, distance: 0.52 },
+  { angle: 171, distance: 0.88 },
+  { angle: 204, distance: 0.66 },
+  { angle: 243, distance: 0.84 },
 ];
 
 export function RadarBackdrop({ className }: { className?: string }) {
@@ -24,7 +29,7 @@ export function RadarBackdrop({ className }: { className?: string }) {
     <div className={cn("radar pointer-events-none absolute overflow-hidden", className)} aria-hidden="true">
       <div className="radar-dish">
         <div className="radar-rings" />
-        <div className="radar-sweep" style={{ animationDuration: `${SWEEP_SECONDS}s` }} />
+        <div className="radar-sweep" style={{ animationDuration: `${TURN_SECONDS}s` }} />
         {BLIPS.map((b) => {
           const rad = (b.angle * Math.PI) / 180;
           return (
@@ -34,8 +39,8 @@ export function RadarBackdrop({ className }: { className?: string }) {
               style={{
                 left: `${50 + Math.sin(rad) * b.distance * 50}%`,
                 top: `${50 - Math.cos(rad) * b.distance * 50}%`,
-                animationDuration: `${SWEEP_SECONDS}s`,
-                animationDelay: `${(b.angle / 360) * SWEEP_SECONDS}s`,
+                animationDuration: `${BEAM_SECONDS}s`,
+                animationDelay: `${((b.angle / 360) * TURN_SECONDS) % BEAM_SECONDS}s`,
               }}
             />
           );
