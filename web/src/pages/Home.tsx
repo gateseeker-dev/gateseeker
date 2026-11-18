@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 
 import { GitHubCta } from "../components/GitHubCta";
 import { LiveExample } from "../components/LiveExample";
-import { RadarBackdrop } from "../components/RadarBackdrop";
 import { Link } from "../router";
 
 /**
@@ -16,8 +15,6 @@ export function Home() {
   return (
     <>
       <section className="relative mb-14 pt-4 sm:mb-20 sm:pt-10">
-        {/* Stays inside the page gutters (no horizontal scroll); its top edge is the bottom edge of the header, where the radar is centred. */}
-        <RadarBackdrop className="-inset-x-4 -top-10 -bottom-10 sm:-inset-x-6 sm:-top-14" />
         <div className="relative mx-auto max-w-3xl text-center">
           <h1 className="text-4xl font-semibold leading-[1.08] tracking-tight sm:text-5xl lg:text-[3.5rem]">Your app was built fast. Find out what shipped with it.</h1>
           <p className="mx-auto mt-5 max-w-2xl text-base text-muted-foreground sm:text-lg">

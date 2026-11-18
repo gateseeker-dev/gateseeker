@@ -35,7 +35,8 @@ export function ExampleReport({ className }: { className?: string }) {
         </span>
         <span className="font-mono">{EXAMPLE.repository}</span>
       </figcaption>
-      <div className="grid gap-3">
+      {/* grid-cols-1 is minmax(0, 1fr): without it a grid item grows to its longest unbreakable string and the page scrolls sideways on a phone. */}
+      <div className="grid grid-cols-1 gap-3">
         <Card className="border-destructive/60">
           <CardHeader>
             <CardTitle className="flex flex-wrap items-center gap-2 text-lg">
@@ -58,7 +59,7 @@ export function ExampleReport({ className }: { className?: string }) {
             </dl>
           </CardContent>
         </Card>
-        <ol className="grid gap-3">
+        <ol className="grid grid-cols-1 gap-3">
           {EXAMPLE.findings.map((f) => (
             <li key={f.subject}>
               <Card>
@@ -66,7 +67,7 @@ export function ExampleReport({ className }: { className?: string }) {
                   <Badge variant={priorityVariant(f.priority)} className="mt-0.5 shrink-0">{f.priority}</Badge>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-sm">{f.subject}</span>
+                      <span className="break-all font-mono text-sm">{f.subject}</span>
                       <Badge variant={f.severity === "CRITICAL" ? "critical" : "high"}>{f.severity}</Badge>
                       <Badge variant="outline">code pattern</Badge>
                     </div>

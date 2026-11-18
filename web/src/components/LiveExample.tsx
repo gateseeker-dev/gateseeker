@@ -28,7 +28,7 @@ export function LiveExample() {
 
   if (phase.kind === "ready") {
     return (
-      <div className="grid gap-3">
+      <div className="grid grid-cols-1 gap-3">
         <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <Badge variant="secondary">Live example</Badge>
           Real analysis of <span className="font-mono">{phase.response.repository.owner}/{phase.response.repository.repo}</span> at commit <span className="font-mono">{phase.response.repository.sha.slice(0, 7)}</span>, produced by the same engine you get after signing in.
@@ -38,7 +38,7 @@ export function LiveExample() {
     );
   }
   return (
-    <div className="grid gap-3">
+    <div className="grid grid-cols-1 gap-3">
       <ExampleReport />
       <div className="flex flex-wrap items-center justify-center gap-3">
         <Button size="lg" variant="outline" className="h-11" disabled={phase.kind === "loading"} onClick={() => void load()}>
