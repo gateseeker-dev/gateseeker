@@ -95,7 +95,8 @@
     "https://thehackernews.com/2026/11/stolen-fireworks-ai-key-led-to-cursor.html": "2026-11-15T18:54:39.990Z",
     "https://www.stepsecurity.io/blog/wppconnect-compromised-malicious-releases-steal-secrets-and-whatsapp-sessions": "2026-11-17T07:58:58.446Z",
     "https://www.stepsecurity.io/blog/microsoft-agent-framework-pypi-package-compromised": "2026-11-18T07:34:57.326Z",
-    "https://www.aikido.dev/blog/two-malicious-agent-framework-releases-hit-pypi-in-33-minutes": "2026-11-18T07:34:57.326Z"
+    "https://www.aikido.dev/blog/two-malicious-agent-framework-releases-hit-pypi-in-33-minutes": "2026-11-18T07:34:57.326Z",
+    "https://thehackernews.com/2026/11/wordpress-blocks-six-backdoored-wp.html": "2026-11-25T08:41:50.973Z"
   },
   "titles": {
     "ea48cb3956a9b65a": "https://www.stepsecurity.io/blog/litellm-1-107-0-compromised-pypi-backdoored-wheels-credential-stealer",
@@ -193,6 +194,7 @@
     "0331c5a94bb9fb85": "https://thehackernews.com/2026/11/stolen-fireworks-ai-key-led-to-cursor.html",
     "8b9ef9103dfa71e0": "https://www.stepsecurity.io/blog/wppconnect-compromised-malicious-releases-steal-secrets-and-whatsapp-sessions",
     "50cd490ebde473eb": "https://www.stepsecurity.io/blog/microsoft-agent-framework-pypi-package-compromised",
-    "2265ee1e02be8cfa": "https://www.aikido.dev/blog/two-malicious-agent-framework-releases-hit-pypi-in-33-minutes"
+    "2265ee1e02be8cfa": "https://www.aikido.dev/blog/two-malicious-agent-framework-releases-hit-pypi-in-33-minutes",
+    "adf91e8ab1469625": "https://thehackernews.com/2026/11/wordpress-blocks-six-backdoored-wp.html"
   }
 }
