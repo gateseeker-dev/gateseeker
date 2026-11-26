@@ -1,0 +1,39 @@
+{
+  "id": "GSK-ADV-2026-0021",
+  "status": "rejected",
+  "type": "other",
+  "severity": "HIGH",
+  "ecosystem": "other",
+  "packages": [
+    {
+      "name": "UNKNOWN/fill-in",
+      "affected": {}
+    }
+  ],
+  "window": {
+    "start": "2026-11-25T06:21:12.000Z",
+    "end": null
+  },
+  "indicators": [],
+  "summary": "TODO: one line written by the reviewer after reading the source.",
+  "remediation": "TODO: concrete action written by the reviewer.",
+  "sources": [
+    {
+      "url": "https://thehackernews.com/2026/11/wordpress-blocks-six-backdoored-wp.html",
+      "publisher": "The Hacker News",
+      "title": "WordPress Blocks Six Backdoored WP Connect Plugins Before Malicious Releases Go Live",
+      "published_at": "2026-11-25"
+    }
+  ],
+  "review": {
+    "proposed_by": "collector",
+    "proposed_at": "2026-11-25T08:41:50.973Z",
+    "reviewed_by": "fernandocapone-stack (on engineering's researched recommendation)",
+    "reviewed_at": "2026-11-26T17:37:23.645Z",
+    "notes": "Rejected 2026-11-26: WordPress plugins, blocked before release; no npm or Composer package a lockfile can hold."
+  },
+  "upstream": {
+    "osv": null,
+    "ghsa": null
+  }
+}

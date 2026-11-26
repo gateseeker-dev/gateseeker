@@ -1,0 +1,39 @@
+{
+  "id": "GSK-ADV-2026-0017",
+  "status": "rejected",
+  "type": "other",
+  "severity": "HIGH",
+  "ecosystem": "other",
+  "packages": [
+    {
+      "name": "UNKNOWN/fill-in",
+      "affected": {}
+    }
+  ],
+  "window": {
+    "start": "2026-11-15T08:22:04.000Z",
+    "end": null
+  },
+  "indicators": [],
+  "summary": "TODO: one line written by the reviewer after reading the source.",
+  "remediation": "TODO: concrete action written by the reviewer.",
+  "sources": [
+    {
+      "url": "https://thehackernews.com/2026/11/stolen-fireworks-ai-key-led-to-cursor.html",
+      "publisher": "The Hacker News",
+      "title": "Cursor Says Stolen Fireworks AI Key Led to Trojanized Claude Code Extension Incident",
+      "published_at": "2026-11-15"
+    }
+  ],
+  "review": {
+    "proposed_by": "collector",
+    "proposed_at": "2026-11-15T18:54:39.990Z",
+    "reviewed_by": "fernandocapone-stack (on engineering's researched recommendation)",
+    "reviewed_at": "2026-11-26T17:37:23.645Z",
+    "notes": "Rejected 2026-11-26: root cause (stolen Fireworks AI key) of the tampered Claude Code extension already recorded as GSK-ADV-2026-0014; editor extension, never in a lockfile. Source not readable by automated fetch (HTTP 403)."
+  },
+  "upstream": {
+    "osv": null,
+    "ghsa": null
+  }
+}
