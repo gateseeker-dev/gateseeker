@@ -97,7 +97,8 @@
     "https://www.stepsecurity.io/blog/microsoft-agent-framework-pypi-package-compromised": "2026-11-18T07:34:57.326Z",
     "https://www.aikido.dev/blog/two-malicious-agent-framework-releases-hit-pypi-in-33-minutes": "2026-11-18T07:34:57.326Z",
     "https://thehackernews.com/2026/11/wordpress-blocks-six-backdoored-wp.html": "2026-11-25T08:41:50.973Z",
-    "https://thehackernews.com/2026/11/13-malicious-nuget-packages-turn-fake.html": "2026-11-26T08:26:41.316Z"
+    "https://thehackernews.com/2026/11/13-malicious-nuget-packages-turn-fake.html": "2026-11-26T08:26:41.316Z",
+    "https://thehackernews.com/2026/11/threatsday-250-rogue-extensions-10m.html": "2026-11-26T21:37:36.507Z"
   },
   "titles": {
     "ea48cb3956a9b65a": "https://www.stepsecurity.io/blog/litellm-1-107-0-compromised-pypi-backdoored-wheels-credential-stealer",
@@ -197,6 +198,7 @@
     "50cd490ebde473eb": "https://www.stepsecurity.io/blog/microsoft-agent-framework-pypi-package-compromised",
     "2265ee1e02be8cfa": "https://www.aikido.dev/blog/two-malicious-agent-framework-releases-hit-pypi-in-33-minutes",
     "adf91e8ab1469625": "https://thehackernews.com/2026/11/wordpress-blocks-six-backdoored-wp.html",
-    "968e3741670224a0": "https://thehackernews.com/2026/11/13-malicious-nuget-packages-turn-fake.html"
+    "968e3741670224a0": "https://thehackernews.com/2026/11/13-malicious-nuget-packages-turn-fake.html",
+    "a20376a54e5bca67": "https://thehackernews.com/2026/11/threatsday-250-rogue-extensions-10m.html"
   }
 }
