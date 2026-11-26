@@ -1,6 +1,6 @@
 {
   "id": "GSK-ADV-2026-0019",
-  "status": "proposed",
+  "status": "rejected",
   "type": "other",
   "severity": "HIGH",
   "ecosystem": "PyPI",
@@ -28,9 +28,9 @@
   "review": {
     "proposed_by": "collector",
     "proposed_at": "2026-11-18T07:34:57.326Z",
-    "reviewed_by": null,
-    "reviewed_at": null,
-    "notes": null
+    "reviewed_by": "fernandocapone-stack (on engineering's researched recommendation)",
+    "reviewed_at": "2026-11-26T17:37:23.645Z",
+    "notes": "Rejected 2026-11-26: PyPI package; no npm or Composer package a lockfile we read can hold."
   },
   "upstream": {
     "osv": null,

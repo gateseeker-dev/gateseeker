@@ -1,6 +1,6 @@
 {
   "id": "GSK-ADV-2026-0017",
-  "status": "proposed",
+  "status": "rejected",
   "type": "other",
   "severity": "HIGH",
   "ecosystem": "other",
@@ -28,9 +28,9 @@
   "review": {
     "proposed_by": "collector",
     "proposed_at": "2026-11-15T18:54:39.990Z",
-    "reviewed_by": null,
-    "reviewed_at": null,
-    "notes": null
+    "reviewed_by": "fernandocapone-stack (on engineering's researched recommendation)",
+    "reviewed_at": "2026-11-26T17:37:23.645Z",
+    "notes": "Rejected 2026-11-26: root cause (stolen Fireworks AI key) of the tampered Claude Code extension already recorded as GSK-ADV-2026-0014; editor extension, never in a lockfile. Source not readable by automated fetch (HTTP 403)."
   },
   "upstream": {
     "osv": null,

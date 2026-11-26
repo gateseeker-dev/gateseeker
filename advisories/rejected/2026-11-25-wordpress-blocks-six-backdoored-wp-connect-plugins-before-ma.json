@@ -1,6 +1,6 @@
 {
   "id": "GSK-ADV-2026-0021",
-  "status": "proposed",
+  "status": "rejected",
   "type": "other",
   "severity": "HIGH",
   "ecosystem": "other",
@@ -28,9 +28,9 @@
   "review": {
     "proposed_by": "collector",
     "proposed_at": "2026-11-25T08:41:50.973Z",
-    "reviewed_by": null,
-    "reviewed_at": null,
-    "notes": null
+    "reviewed_by": "fernandocapone-stack (on engineering's researched recommendation)",
+    "reviewed_at": "2026-11-26T17:37:23.645Z",
+    "notes": "Rejected 2026-11-26: WordPress plugins, blocked before release; no npm or Composer package a lockfile can hold."
   },
   "upstream": {
     "osv": null,
